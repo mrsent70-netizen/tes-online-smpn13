@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tes Login — Sistem Tes Online SMPN 13</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f0f4f8; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+  .box { background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); width: 100%; max-width: 380px; }
+  h2 { color: #1E3A5F; margin-top: 0; font-size: 18px; }
+  label { display: block; font-size: 13px; color: #333; margin: 12px 0 4px; }
+  select, input, button { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  button { background: #1E3A5F; color: #fff; border: none; margin-top: 18px; cursor: pointer; font-weight: bold; }
+  button:hover { background: #16304d; }
+  pre { background: #f5f5f5; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #0a7a2f; }
+  .err { color: #c0392b; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h2>🔐 Tes Login — Backend Apps Script</h2>
+
+    <label>API_URL (Web App URL)</label>
+    <input id="apiUrl" type="text" value="GANTI_DENGAN_WEB_APP_URL" />
+
+    <label>Role</label>
+    <select id="role">
+      <option value="ADMIN">ADMIN</option>
+      <option value="GURU">GURU</option>
+      <option value="SISWA">SISWA</option>
+    </select>
+
+    <label>Username / NISN</label>
+    <input id="username" type="text" value="admin" />
+
+    <label>Password</label>
+    <input id="password" type="password" value="admin123" />
+
+    <button onclick="testLogin()">Tes Login</button>
+
+    <pre id="hasil">Hasil akan tampil di sini...</pre>
+  </div>
+
+<script>
+async function testLogin() {
+  const hasilEl = document.getElementById('hasil');
+  hasilEl.textContent = 'Mengirim permintaan...';
+  hasilEl.className = '';
+
+  const apiUrl = document.getElementById('apiUrl').value.trim();
+  const role = document.getElementById('role').value;
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'login',
+        payload: { role, username, password }
+      })
+    });
+    const data = await res.json();
+    hasilEl.textContent = JSON.stringify(data, null, 2);
+    hasilEl.className = (data.success && data.data && data.data.success) ? 'ok' : 'err';
+  } catch (err) {
+    hasilEl.textContent = 'GAGAL terhubung: ' + err.message +
+      '\n\nKemungkinan penyebab:\n- API_URL belum diganti dengan Web App URL asli\n- Deployment belum "New version" setelah edit kode\n- Akses deployment belum "Anyone"';
+    hasilEl.className = 'err';
+  }
+}
+</script>
+</body>
+</html>
