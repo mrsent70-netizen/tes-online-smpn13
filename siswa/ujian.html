@@ -146,6 +146,28 @@ document.getElementById('loginNamaApp').textContent = CONFIG.NAMA_APLIKASI;
 document.getElementById('loginNamaSekolah').textContent = CONFIG.NAMA_SEKOLAH;
 document.getElementById('loginLogo').src = CONFIG.LOGO_URL;
 
+// Jika siswa datang dari dashboard.html (sudah login di sana), lanjutkan
+// sesinya di sini tanpa perlu login ulang, dan langsung isi token dari URL.
+window.onload = function () {
+  const saved = sessionStorage.getItem('sesiTesOnline');
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenDariUrl = urlParams.get('token') || sessionStorage.getItem('tokenUjianDipilih');
+
+  if (saved) {
+    const s = JSON.parse(saved);
+    if (s.user && s.user.role === 'SISWA') {
+      TOKEN = s.token; USER = s.user;
+      document.getElementById('namaSiswa').textContent = USER.nama;
+      document.getElementById('tahapLogin').classList.add('hidden');
+      document.getElementById('tahapToken').classList.remove('hidden');
+      if (tokenDariUrl) {
+        document.getElementById('tokenUjian').value = tokenDariUrl;
+        mulaiUjianForm();
+      }
+    }
+  }
+};
+
 async function callApi(action, payload) {
   const res = await fetch(CONFIG.API_URL, {
     method: 'POST',
