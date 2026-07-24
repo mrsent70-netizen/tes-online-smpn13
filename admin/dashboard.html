@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Admin — Sistem Tes Online SMPN 13 Bandar Lampung</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../assets/js/config.js"></script>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; }
+  .navy { background-color: #1E3A5F; }
+  .navy-text { color: #1E3A5F; }
+  .btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.15s; border: none; }
+  .btn-primary { background: #1E3A5F; color: #fff; }
+  .btn-primary:hover { background: #16304d; }
+  .btn-secondary { background: #E5EDF5; color: #1E3A5F; }
+  .btn-secondary:hover { background: #d5e0ed; }
+  .btn-danger { background: #FEE2E2; color: #B91C1C; }
+  .btn-danger:hover { background: #fecaca; }
+  input, select, textarea { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font-size: 14px; width: 100%; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f8fafc; color: #1E3A5F; font-weight: 700; }
+  tr:hover { background: #f8fafc; }
+  .tab-btn { padding: 10px 18px; font-weight: 600; font-size: 14px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; }
+  .tab-btn.active { color: #1E3A5F; border-color: #1E3A5F; }
+  .modal-bg { background: rgba(15, 23, 42, 0.5); }
+  .card-stat { background: #fff; border-radius: 14px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .bar { height: 8px; border-radius: 999px; background: #E5EDF5; overflow: hidden; }
+  .bar-fill { height: 100%; background: #1E3A5F; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView" class="min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
+    <div class="text-center mb-6">
+      <img id="loginLogo" class="h-14 mx-auto mb-3" alt="Logo Sekolah" />
+      <h1 class="text-lg font-bold navy-text" id="loginNamaApp"></h1>
+      <p class="text-xs text-gray-500" id="loginNamaSekolah"></p>
+    </div>
+    <label class="text-xs font-semibold text-gray-600">Username</label>
+    <input id="loginUsername" class="mb-3" placeholder="Username Admin" />
+    <label class="text-xs font-semibold text-gray-600">Password</label>
+    <input id="loginPassword" type="password" class="mb-4" placeholder="Password" />
+    <button onclick="doLogin()" class="btn btn-primary w-full">Masuk</button>
+    <p id="loginError" class="text-red-600 text-xs mt-3 text-center"></p>
+  </div>
+</div>
+
+<!-- ============ DASHBOARD ============ -->
+<div id="mainView" class="hidden">
+  <header class="navy text-white px-6 py-4 flex items-center justify-between shadow sticky top-0 z-10">
+    <div class="flex items-center gap-3">
+      <img id="headerLogo" class="h-9" alt="Logo" />
+      <div>
+        <h1 class="font-bold text-sm">Dashboard Admin</h1>
+        <p class="text-xs text-blue-200" id="headerUser"></p>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <a href="../guru/bank-soal.html" class="btn btn-secondary" style="text-decoration:none;">📚 Bank Soal</a>
+      <button onclick="logoutUser()" class="btn btn-secondary">Keluar</button>
+    </div>
+  </header>
+
+  <nav class="bg-white border-b flex gap-2 px-6 sticky top-[68px] z-10 overflow-x-auto">
+    <div class="tab-btn active" data-tab="ringkasan" onclick="pindahTab('ringkasan')">Ringkasan</div>
+    <div class="tab-btn" data-tab="siswa" onclick="pindahTab('siswa')">Kelola Siswa</div>
+    <div class="tab-btn" data-tab="paket" onclick="pindahTab('paket')">Paket Ujian</div>
+    <div class="tab-btn" data-tab="monitoring" onclick="pindahTab('monitoring')">Monitoring Realtime</div>
+  </nav>
+
+  <main class="p-6 max-w-7xl mx-auto">
+
+    <!-- ===== TAB RINGKASAN ===== -->
+    <section id="tab-ringkasan">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="card-stat"><p class="text-xs text-gray-500">Total Siswa Aktif</p><p class="text-2xl font-bold navy-text" id="ringkasanSiswa">-</p></div>
+        <div class="card-stat"><p class="text-xs text-gray-500">Total Guru Aktif</p><p class="text-2xl font-bold navy-text" id="ringkasanGuru">-</p></div>
+        <div class="card-stat"><p class="text-xs text-gray-500">Total Bank Soal</p><p class="text-2xl font-bold navy-text" id="ringkasanSoal">-</p></div>
+        <div class="card-stat"><p class="text-xs text-gray-500">Total Paket Ujian</p><p class="text-2xl font-bold navy-text" id="ringkasanPaket">-</p></div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm p-5">
+        <h2 class="font-bold navy-text mb-3">Ujian Aktif Hari Ini</h2>
+        <div id="daftarUjianHariIni" class="space-y-2"></div>
+        <p id="tidakAdaUjian" class="hidden text-sm text-gray-400 text-center py-6">Tidak ada ujian yang dijadwalkan hari ini.</p>
+      </div>
+    </section>
+
+    <!-- ===== TAB KELOLA SISWA ===== -->
+    <section id="tab-siswa" class="hidden">
+      <div class="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-end">
+        <div class="flex-1 min-w-[140px]">
+          <label class="text-xs font-semibold text-gray-600">Cari (nama/NISN)</label>
+          <input id="siswaCari" placeholder="Cari siswa..." />
+        </div>
+        <div class="flex-1 min-w-[100px]">
+          <label class="text-xs font-semibold text-gray-600">Kelas</label>
+          <input id="siswaFilterKelas" placeholder="mis. 7.1" />
+        </div>
+        <button onclick="muatSiswa()" class="btn btn-secondary">🔍 Cari</button>
+        <div class="flex-1"></div>
+        <label class="btn btn-secondary cursor-pointer">
+          📥 Impor Excel
+          <input type="file" id="fileExcelSiswa" accept=".xlsx,.xls" class="hidden" onchange="importSiswaExcel(event)" />
+        </label>
+        <button onclick="unduhTemplateSiswa()" class="btn btn-secondary">⬇️ Template</button>
+        <button onclick="bukaModalSiswa()" class="btn btn-primary">+ Tambah Siswa</button>
+      </div>
+      <div id="importSiswaStatus" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
+      <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table>
+          <thead><tr><th>NIS</th><th>NISN</th><th>Nama</th><th>Kelas</th><th>JK</th><th>Status</th><th>Aksi</th></tr></thead>
+          <tbody id="tabelSiswa"></tbody>
+        </table>
+        <p id="siswaKosong" class="hidden text-center text-gray-400 py-10 text-sm">Belum ada data siswa.</p>
+      </div>
+    </section>
+
+    <!-- ===== TAB PAKET UJIAN ===== -->
+    <section id="tab-paket" class="hidden">
+      <div class="flex justify-end mb-4">
+        <button onclick="bukaModalPaket()" class="btn btn-primary">+ Buat Paket Ujian</button>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+        <table>
+          <thead><tr><th>Nama Ujian</th><th>Mapel</th><th>Kelas</th><th>Tanggal</th><th>Jam</th><th>Token</th><th>Status</th><th>Aksi</th></tr></thead>
+          <tbody id="tabelPaket"></tbody>
+        </table>
+        <p id="paketKosong" class="hidden text-center text-gray-400 py-10 text-sm">Belum ada paket ujian.</p>
+      </div>
+    </section>
+
+    <!-- ===== TAB MONITORING ===== -->
+    <section id="tab-monitoring" class="hidden">
+      <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
+        <label class="text-xs font-semibold text-gray-600">Pilih Paket Ujian</label>
+        <select id="monitoringPaketSelect" onchange="muatMonitoring()"></select>
+      </div>
+      <div id="monitoringHasil" class="hidden">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div class="card-stat"><p class="text-xs text-gray-500">Total Siswa</p><p class="text-2xl font-bold navy-text" id="monTotal">-</p></div>
+          <div class="card-stat"><p class="text-xs text-gray-500">Sedang Mengerjakan</p><p class="text-2xl font-bold" style="color:#D97706;" id="monBerlangsung">-</p></div>
+          <div class="card-stat"><p class="text-xs text-gray-500">Sudah Selesai</p><p class="text-2xl font-bold" style="color:#059669;" id="monSelesai">-</p></div>
+          <div class="card-stat"><p class="text-xs text-gray-500">Belum Login</p><p class="text-2xl font-bold text-gray-400" id="monBelum">-</p></div>
+          <div class="card-stat"><p class="text-xs text-gray-500">Nilai Rata-rata</p><p class="text-2xl font-bold navy-text" id="monRata">-</p></div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-5">
+          <h2 class="font-bold navy-text mb-4">Distribusi Nilai</h2>
+          <div id="distribusiChart" class="space-y-3"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ MODAL SISWA ============ -->
+<div id="modalSiswa" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+    <h2 class="font-bold navy-text text-lg mb-4" id="modalSiswaJudul">Tambah Siswa</h2>
+    <input type="hidden" id="siswaRow" />
+    <label class="text-xs font-semibold text-gray-600">NIS</label>
+    <input id="fNis" class="mb-3" />
+    <label class="text-xs font-semibold text-gray-600">NISN</label>
+    <input id="fNisn" class="mb-3" />
+    <label class="text-xs font-semibold text-gray-600">Nama</label>
+    <input id="fNama" class="mb-3" />
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div><label class="text-xs font-semibold text-gray-600">Kelas</label><input id="fKelasSiswa" placeholder="7.1" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Jenis Kelamin</label>
+        <select id="fJk"><option value="L">Laki-laki</option><option value="P">Perempuan</option></select>
+      </div>
+    </div>
+    <p class="text-xs text-gray-500 mb-4">Password default siswa baru = NISN-nya sendiri.</p>
+    <div class="flex justify-end gap-3">
+      <button onclick="tutupModalSiswa()" class="btn btn-secondary">Batal</button>
+      <button onclick="simpanSiswaForm()" class="btn btn-primary">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL PAKET UJIAN ============ -->
+<div id="modalPaket" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+    <h2 class="font-bold navy-text text-lg mb-4" id="modalPaketJudul">Buat Paket Ujian</h2>
+    <input type="hidden" id="paketRow" /><input type="hidden" id="paketIdLama" />
+
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div class="col-span-2"><label class="text-xs font-semibold text-gray-600">Nama Ujian</label><input id="pNama" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Mata Pelajaran</label><input id="pMapel" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Kelas</label><input id="pKelas" placeholder="7.1" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Tanggal</label><input id="pTanggal" type="date" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Token (kosongkan = otomatis)</label><input id="pToken" placeholder="Otomatis" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Jam Mulai</label><input id="pJamMulai" type="time" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Jam Selesai</label><input id="pJamSelesai" type="time" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Durasi (menit)</label><input id="pDurasi" type="number" value="60" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Jumlah Soal Ditampilkan</label><input id="pJumlahSoal" type="number" value="10" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Nilai Minimum Lulus</label><input id="pNilaiMin" type="number" value="60" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Maksimal Login</label><input id="pMaksLogin" type="number" value="1" /></div>
+      <div><label class="text-xs font-semibold text-gray-600">Batas Pelanggaran</label><input id="pBatasPelanggaran" type="number" value="3" /></div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 mb-4 text-sm">
+      <label class="flex items-center gap-2"><input type="checkbox" id="pAcakSoal" class="w-auto" checked /> Acak Soal</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="pAcakJawaban" class="w-auto" checked /> Acak Jawaban</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="pTampilkanNilai" class="w-auto" checked /> Tampilkan Nilai Langsung</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="pTampilkanPembahasan" class="w-auto" /> Tampilkan Pembahasan</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="pBolehKembali" class="w-auto" checked /> Boleh Kembali ke Soal Sebelumnya</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="pFullscreenWajib" class="w-auto" checked /> Fullscreen Wajib</label>
+    </div>
+
+    <div class="flex justify-end gap-3">
+      <button onclick="tutupModalPaket()" class="btn btn-secondary">Batal</button>
+      <button onclick="simpanPaketForm()" class="btn btn-primary">Simpan Paket Ujian</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let TOKEN = null, USER = null;
+let SISWA_CACHE = [], PAKET_CACHE = [];
+
+document.getElementById('loginNamaApp').textContent = CONFIG.NAMA_APLIKASI;
+document.getElementById('loginNamaSekolah').textContent = CONFIG.NAMA_SEKOLAH;
+document.getElementById('loginLogo').src = CONFIG.LOGO_URL;
+document.getElementById('headerLogo').src = CONFIG.LOGO_URL;
+
+window.onload = function () {
+  const saved = sessionStorage.getItem('sesiTesOnline');
+  if (saved) {
+    const s = JSON.parse(saved);
+    TOKEN = s.token; USER = s.user;
+    if (USER.role === 'ADMIN') tampilkanMain();
+  }
+};
+
+async function callApi(action, payload) {
+  const res = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, payload: payload || {}, token: TOKEN })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.message || 'Terjadi kesalahan.');
+  return json.data;
+}
+
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  try {
+    const data = await callApi('login', { role: 'ADMIN', username, password });
+    if (!data.success) { errEl.textContent = data.message; return; }
+    TOKEN = data.token; USER = data.user;
+    sessionStorage.setItem('sesiTesOnline', JSON.stringify({ token: TOKEN, user: USER }));
+    tampilkanMain();
+  } catch (err) {
+    errEl.textContent = 'Gagal terhubung: ' + err.message;
+  }
+}
+
+function logoutUser() {
+  callApi('logout', {}).catch(function(){});
+  sessionStorage.removeItem('sesiTesOnline');
+  location.reload();
+}
+
+function tampilkanMain() {
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('mainView').classList.remove('hidden');
+  document.getElementById('headerUser').textContent = USER.nama + ' — ADMIN';
+  muatRingkasan();
+  muatSiswa();
+  muatPaket();
+}
+
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+
+// ---------- TAB NAVIGASI ----------
+function pindahTab(nama) {
+  document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === nama); });
+  ['ringkasan', 'siswa', 'paket', 'monitoring'].forEach(function (t) {
+    document.getElementById('tab-' + t).classList.toggle('hidden', t !== nama);
+  });
+  if (nama === 'monitoring') isiDropdownMonitoring();
+}
+
+// ---------- RINGKASAN ----------
+async function muatRingkasan() {
+  try {
+    const r = await callApi('ambilRingkasanDashboard', {});
+    document.getElementById('ringkasanSiswa').textContent = r.totalSiswa;
+    document.getElementById('ringkasanGuru').textContent = r.totalGuru;
+    document.getElementById('ringkasanSoal').textContent = r.totalSoal;
+    document.getElementById('ringkasanPaket').textContent = r.totalPaket;
+
+    const daftarEl = document.getElementById('daftarUjianHariIni');
+    daftarEl.innerHTML = '';
+    if (!r.paketAktifHariIni.length) {
+      document.getElementById('tidakAdaUjian').classList.remove('hidden');
+    } else {
+      document.getElementById('tidakAdaUjian').classList.add('hidden');
+      r.paketAktifHariIni.forEach(function (p) {
+        const div = document.createElement('div');
+        div.className = 'flex justify-between items-center p-3 bg-blue-50 rounded-lg';
+        div.innerHTML = '<div><p class="font-semibold text-sm navy-text">' + esc(p.namaUjian) + '</p>' +
+          '<p class="text-xs text-gray-500">' + esc(p.mapel) + ' — Kelas ' + esc(p.kelas) + ' · ' + esc(p.jamMulai) + '-' + esc(p.jamSelesai) + '</p></div>';
+        daftarEl.appendChild(div);
+      });
+    }
+  } catch (err) { console.error(err.message); }
+}
+
+// ---------- KELOLA SISWA ----------
+async function muatSiswa() {
+  try {
+    SISWA_CACHE = await callApi('ambilDaftarSiswa', {
+      cari: document.getElementById('siswaCari').value.trim(),
+      kelas: document.getElementById('siswaFilterKelas').value.trim()
+    });
+    renderTabelSiswa();
+  } catch (err) { alert('Gagal memuat siswa: ' + err.message); }
+}
+
+function renderTabelSiswa() {
+  const tbody = document.getElementById('tabelSiswa');
+  tbody.innerHTML = '';
+  document.getElementById('siswaKosong').classList.toggle('hidden', SISWA_CACHE.length > 0);
+  SISWA_CACHE.forEach(function (s) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(s.NIS) + '</td><td>' + esc(s.NISN) + '</td><td>' + esc(s.NAMA) + '</td>' +
+      '<td>' + esc(s.KELAS) + '</td><td>' + esc(s.JENIS_KELAMIN) + '</td><td>' + esc(s.STATUS) + '</td>' +
+      '<td class="whitespace-nowrap">' +
+        '<button onclick="editSiswa(' + s._row + ')" class="btn btn-secondary" style="padding:4px 10px;">Edit</button> ' +
+        '<button onclick="resetPassword(' + s._row + ',\'' + s.NISN + '\')" class="btn btn-secondary" style="padding:4px 10px;">Reset Pass</button> ' +
+        '<button onclick="konfirmasiHapusSiswa(' + s._row + ')" class="btn btn-danger" style="padding:4px 10px;">Hapus</button>' +
+      '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function bukaModalSiswa() {
+  document.getElementById('modalSiswaJudul').textContent = 'Tambah Siswa';
+  document.getElementById('siswaRow').value = '';
+  ['fNis','fNisn','fNama','fKelasSiswa'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('fJk').value = 'L';
+  document.getElementById('modalSiswa').classList.remove('hidden');
+}
+function editSiswa(row) {
+  const s = SISWA_CACHE.find(function (x) { return x._row === row; });
+  if (!s) return;
+  document.getElementById('modalSiswaJudul').textContent = 'Edit Siswa';
+  document.getElementById('siswaRow').value = s._row;
+  document.getElementById('fNis').value = s.NIS;
+  document.getElementById('fNisn').value = s.NISN;
+  document.getElementById('fNama').value = s.NAMA;
+  document.getElementById('fKelasSiswa').value = s.KELAS;
+  document.getElementById('fJk').value = s.JENIS_KELAMIN;
+  document.getElementById('modalSiswa').classList.remove('hidden');
+}
+function tutupModalSiswa() { document.getElementById('modalSiswa').classList.add('hidden'); }
+
+async function simpanSiswaForm() {
+  const payload = {
+    _row: document.getElementById('siswaRow').value || null,
+    nis: document.getElementById('fNis').value.trim(),
+    nisn: document.getElementById('fNisn').value.trim(),
+    nama: document.getElementById('fNama').value.trim(),
+    kelas: document.getElementById('fKelasSiswa').value.trim(),
+    jenisKelamin: document.getElementById('fJk').value
+  };
+  try {
+    const hasil = await callApi('simpanSiswa', payload);
+    tutupModalSiswa();
+    muatSiswa();
+    if (hasil.passwordDefault) alert('Siswa berhasil ditambahkan. Password default: ' + hasil.passwordDefault);
+  } catch (err) { alert('Gagal menyimpan: ' + err.message); }
+}
+
+async function resetPassword(row, nisn) {
+  if (!confirm('Reset password siswa ini kembali ke NISN-nya (' + nisn + ')?')) return;
+  try {
+    await callApi('resetPasswordSiswa', { _row: row, nisn: nisn });
+    alert('Password berhasil direset ke: ' + nisn);
+  } catch (err) { alert('Gagal reset: ' + err.message); }
+}
+
+async function konfirmasiHapusSiswa(row) {
+  if (!confirm('Hapus data siswa ini?')) return;
+  try { await callApi('hapusSiswa', { _row: row }); muatSiswa(); }
+  catch (err) { alert('Gagal menghapus: ' + err.message); }
+}
+
+function unduhTemplateSiswa() {
+  const header = ['nis','nisn','nama','kelas','jenisKelamin'];
+  const contoh = ['1001','0011223344','Nama Siswa Contoh','7.1','L'];
+  const ws = XLSX.utils.aoa_to_sheet([header, contoh]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Siswa');
+  XLSX.writeFile(wb, 'Template_Impor_Siswa.xlsx');
+}
+
+function importSiswaExcel(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('importSiswaStatus');
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) throw new Error('File kosong atau format tidak sesuai template.');
+
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';
+      statusEl.textContent = 'Mengimpor ' + rows.length + ' siswa...';
+
+      const hasil = await callApi('importSiswaMassal', { daftarSiswa: rows });
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-green-50 text-green-700';
+      statusEl.textContent = 'Berhasil impor ' + hasil.berhasil + ' siswa. Dilewati (NISN sudah ada): ' + hasil.dilewati +
+        (hasil.gagal.length ? '. Gagal: ' + hasil.gagal.map(function(g){ return 'baris '+g.baris+' ('+g.alasan+')'; }).join(', ') : '');
+      muatSiswa();
+    } catch (err) {
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-red-50 text-red-700';
+      statusEl.textContent = 'Gagal impor: ' + err.message;
+    } finally { evt.target.value = ''; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ---------- KELOLA PAKET UJIAN ----------
+async function muatPaket() {
+  try {
+    PAKET_CACHE = await callApi('ambilPaketUjian', {});
+    renderTabelPaket();
+  } catch (err) { console.error(err.message); }
+}
+
+function renderTabelPaket() {
+  const tbody = document.getElementById('tabelPaket');
+  tbody.innerHTML = '';
+  document.getElementById('paketKosong').classList.toggle('hidden', PAKET_CACHE.length > 0);
+  PAKET_CACHE.forEach(function (p) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(p.NAMA_UJIAN) + '</td><td>' + esc(p.MAPEL) + '</td><td>' + esc(p.KELAS) + '</td>' +
+      '<td>' + esc(p.TANGGAL) + '</td><td>' + esc(p.JAM_MULAI) + '-' + esc(p.JAM_SELESAI) + '</td>' +
+      '<td class="font-mono font-bold">' + esc(p.TOKEN) + '</td>' +
+      '<td><span class="' + (String(p.STATUS_AKTIF)==='Aktif' ? 'text-green-600' : 'text-gray-400') + ' font-semibold">' + esc(p.STATUS_AKTIF) + '</span></td>' +
+      '<td class="whitespace-nowrap">' +
+        '<button onclick="editPaket(' + p._row + ')" class="btn btn-secondary" style="padding:4px 10px;">Edit</button> ' +
+        '<button onclick="toggleAktif(' + p._row + ',\'' + p.STATUS_AKTIF + '\')" class="btn btn-secondary" style="padding:4px 10px;">Toggle</button> ' +
+        '<button onclick="konfirmasiHapusPaket(' + p._row + ')" class="btn btn-danger" style="padding:4px 10px;">Hapus</button>' +
+      '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function bukaModalPaket() {
+  document.getElementById('modalPaketJudul').textContent = 'Buat Paket Ujian';
+  document.getElementById('paketRow').value = '';
+  document.getElementById('paketIdLama').value = '';
+  ['pNama','pMapel','pKelas','pToken'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('pTanggal').valueAsDate = new Date();
+  document.getElementById('pJamMulai').value = '07:00';
+  document.getElementById('pJamSelesai').value = '15:00';
+  document.getElementById('pDurasi').value = 60;
+  document.getElementById('pJumlahSoal').value = 10;
+  document.getElementById('pNilaiMin').value = 60;
+  document.getElementById('pMaksLogin').value = 1;
+  document.getElementById('pBatasPelanggaran').value = 3;
+  ['pAcakSoal','pAcakJawaban','pTampilkanNilai','pBolehKembali','pFullscreenWajib'].forEach(function(id){ document.getElementById(id).checked = true; });
+  document.getElementById('pTampilkanPembahasan').checked = false;
+  document.getElementById('modalPaket').classList.remove('hidden');
+}
+
+function editPaket(row) {
+  const p = PAKET_CACHE.find(function (x) { return x._row === row; });
+  if (!p) return;
+  document.getElementById('modalPaketJudul').textContent = 'Edit Paket Ujian';
+  document.getElementById('paketRow').value = p._row;
+  document.getElementById('paketIdLama').value = p.ID_PAKET;
+  document.getElementById('pNama').value = p.NAMA_UJIAN;
+  document.getElementById('pMapel').value = p.MAPEL;
+  document.getElementById('pKelas').value = p.KELAS;
+  document.getElementById('pTanggal').value = formatTanggalInput(p.TANGGAL);
+  document.getElementById('pToken').value = p.TOKEN;
+  document.getElementById('pJamMulai').value = p.JAM_MULAI;
+  document.getElementById('pJamSelesai').value = p.JAM_SELESAI;
+  document.getElementById('pDurasi').value = p.DURASI_MENIT;
+  document.getElementById('pJumlahSoal').value = p.JUMLAH_SOAL_TAMPIL;
+  document.getElementById('pNilaiMin').value = p.NILAI_MINIMUM;
+  document.getElementById('pMaksLogin').value = p.MAKSIMAL_LOGIN;
+  document.getElementById('pBatasPelanggaran').value = p.BATAS_PELANGGARAN;
+  document.getElementById('pAcakSoal').checked = bacaBoolean(p.ACAK_SOAL);
+  document.getElementById('pAcakJawaban').checked = bacaBoolean(p.ACAK_JAWABAN);
+  document.getElementById('pTampilkanNilai').checked = bacaBoolean(p.TAMPILKAN_NILAI);
+  document.getElementById('pTampilkanPembahasan').checked = bacaBoolean(p.TAMPILKAN_PEMBAHASAN);
+  document.getElementById('pBolehKembali').checked = bacaBoolean(p.BOLEH_KEMBALI);
+  document.getElementById('pFullscreenWajib').checked = bacaBoolean(p.FULLSCREEN_WAJIB);
+  document.getElementById('modalPaket').classList.remove('hidden');
+}
+function bacaBoolean(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
+function formatTanggalInput(v) {
+  const d = new Date(v);
+  if (isNaN(d)) return '';
+  return d.toISOString().slice(0, 10);
+}
+function tutupModalPaket() { document.getElementById('modalPaket').classList.add('hidden'); }
+
+async function simpanPaketForm() {
+  const payload = {
+    _row: document.getElementById('paketRow').value || null,
+    idPaket: document.getElementById('paketIdLama').value || null,
+    namaUjian: document.getElementById('pNama').value.trim(),
+    mapel: document.getElementById('pMapel').value.trim(),
+    kelas: document.getElementById('pKelas').value.trim(),
+    tanggal: document.getElementById('pTanggal').value,
+    tokenUjian: document.getElementById('pToken').value.trim().toUpperCase(),
+    jamMulai: document.getElementById('pJamMulai').value,
+    jamSelesai: document.getElementById('pJamSelesai').value,
+    durasiMenit: document.getElementById('pDurasi').value,
+    jumlahSoalTampil: document.getElementById('pJumlahSoal').value,
+    nilaiMinimum: document.getElementById('pNilaiMin').value,
+    maksimalLogin: document.getElementById('pMaksLogin').value,
+    batasPelanggaran: document.getElementById('pBatasPelanggaran').value,
+    acakSoal: document.getElementById('pAcakSoal').checked,
+    acakJawaban: document.getElementById('pAcakJawaban').checked,
+    tampilkanNilai: document.getElementById('pTampilkanNilai').checked,
+    tampilkanPembahasan: document.getElementById('pTampilkanPembahasan').checked,
+    bolehKembali: document.getElementById('pBolehKembali').checked,
+    fullscreenWajib: document.getElementById('pFullscreenWajib').checked,
+    statusAktif: 'Aktif'
+  };
+  try {
+    const hasil = await callApi('simpanPaket', payload);
+    tutupModalPaket();
+    muatPaket();
+    if (hasil.created) alert('Paket ujian dibuat. Token: ' + (payload.tokenUjian || '(dibuat otomatis, lihat tabel)'));
+  } catch (err) { alert('Gagal menyimpan: ' + err.message); }
+}
+
+async function toggleAktif(row, statusSaatIni) {
+  try { await callApi('toggleAktifPaket', { _row: row, statusAktif: statusSaatIni }); muatPaket(); }
+  catch (err) { alert('Gagal: ' + err.message); }
+}
+
+async function konfirmasiHapusPaket(row) {
+  if (!confirm('Hapus paket ujian ini? Data sesi & hasil yang sudah ada TIDAK ikut terhapus.')) return;
+  try { await callApi('hapusPaket', { _row: row }); muatPaket(); }
+  catch (err) { alert('Gagal menghapus: ' + err.message); }
+}
+
+// ---------- MONITORING REALTIME ----------
+function isiDropdownMonitoring() {
+  const sel = document.getElementById('monitoringPaketSelect');
+  sel.innerHTML = '<option value="">-- Pilih paket ujian --</option>';
+  PAKET_CACHE.forEach(function (p) {
+    const opt = document.createElement('option');
+    opt.value = p.ID_PAKET;
+    opt.textContent = p.NAMA_UJIAN + ' (' + p.KELAS + ', ' + p.TANGGAL + ')';
+    sel.appendChild(opt);
+  });
+}
+
+async function muatMonitoring() {
+  const idPaket = document.getElementById('monitoringPaketSelect').value;
+  if (!idPaket) { document.getElementById('monitoringHasil').classList.add('hidden'); return; }
+  try {
+    const stat = await callApi('ambilStatistikPaket', { idPaket: idPaket });
+    document.getElementById('monitoringHasil').classList.remove('hidden');
+    document.getElementById('monTotal').textContent = stat.totalSiswaKelas;
+    document.getElementById('monBerlangsung').textContent = stat.sedangMengerjakan;
+    document.getElementById('monSelesai').textContent = stat.sudahSelesai;
+    document.getElementById('monBelum').textContent = stat.belumLogin;
+    document.getElementById('monRata').textContent = stat.rataRata;
+
+    const chartEl = document.getElementById('distribusiChart');
+    chartEl.innerHTML = '';
+    const maxVal = Math.max.apply(null, Object.values(stat.distribusiNilai).concat([1]));
+    Object.entries(stat.distribusiNilai).forEach(function ([label, jumlah]) {
+      const persen = Math.round((jumlah / maxVal) * 100);
+      chartEl.innerHTML += '<div><div class="flex justify-between text-xs mb-1"><span>' + label + '</span><span>' + jumlah + ' siswa</span></div>' +
+        '<div class="bar"><div class="bar-fill" style="width:' + persen + '%"></div></div></div>';
+    });
+  } catch (err) { alert('Gagal memuat statistik: ' + err.message); }
+}
+
+// Auto-refresh monitoring setiap 15 detik supaya benar-benar realtime
+setInterval(function () {
+  if (!document.getElementById('tab-monitoring').classList.contains('hidden')) {
+    muatMonitoring();
+  }
+}, 15000);
+</script>
+</body>
+</html>
