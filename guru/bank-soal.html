@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bank Soal — Sistem Tes Online SMPN 13 Bandar Lampung</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../assets/js/config.js"></script>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; }
+  .navy { background-color: #1E3A5F; }
+  .navy-text { color: #1E3A5F; }
+  .btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.15s; }
+  .btn-primary { background: #1E3A5F; color: #fff; }
+  .btn-primary:hover { background: #16304d; }
+  .btn-secondary { background: #E5EDF5; color: #1E3A5F; }
+  .btn-secondary:hover { background: #d5e0ed; }
+  .btn-danger { background: #FEE2E2; color: #B91C1C; }
+  .btn-danger:hover { background: #fecaca; }
+  input, select, textarea { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font-size: 14px; width: 100%; }
+  .modal-bg { background: rgba(15, 23, 42, 0.5); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f8fafc; color: #1E3A5F; font-weight: 700; position: sticky; top: 0; }
+  tr:hover { background: #f8fafc; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ HALAMAN LOGIN (sederhana, untuk uji Tahap 2) ============ -->
+<div id="loginView" class="min-h-screen flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
+    <div class="text-center mb-6">
+      <img id="loginLogo" class="h-14 mx-auto mb-3" alt="Logo Sekolah" />
+      <h1 class="text-lg font-bold navy-text" id="loginNamaApp"></h1>
+      <p class="text-xs text-gray-500" id="loginNamaSekolah"></p>
+    </div>
+    <label class="text-xs font-semibold text-gray-600">Role</label>
+    <select id="loginRole" class="mb-3">
+      <option value="GURU">GURU</option>
+      <option value="ADMIN">ADMIN</option>
+    </select>
+    <label class="text-xs font-semibold text-gray-600">Username</label>
+    <input id="loginUsername" class="mb-3" placeholder="Username" />
+    <label class="text-xs font-semibold text-gray-600">Password</label>
+    <input id="loginPassword" type="password" class="mb-4" placeholder="Password" />
+    <button onclick="doLogin()" class="btn btn-primary w-full">Masuk</button>
+    <p id="loginError" class="text-red-600 text-xs mt-3 text-center"></p>
+  </div>
+</div>
+
+<!-- ============ HALAMAN BANK SOAL (tampil setelah login) ============ -->
+<div id="mainView" class="hidden">
+  <header class="navy text-white px-6 py-4 flex items-center justify-between shadow">
+    <div class="flex items-center gap-3">
+      <img id="headerLogo" class="h-9" alt="Logo" />
+      <div>
+        <h1 class="font-bold text-sm" id="headerTitle">Bank Soal</h1>
+        <p class="text-xs text-blue-200" id="headerUser"></p>
+      </div>
+    </div>
+    <button onclick="logoutUser()" class="btn btn-secondary">Keluar</button>
+  </header>
+
+  <main class="p-6 max-w-7xl mx-auto">
+    <!-- Filter & aksi -->
+    <div class="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-end">
+      <div class="flex-1 min-w-[140px]">
+        <label class="text-xs font-semibold text-gray-600">Mata Pelajaran</label>
+        <input id="filterMapel" placeholder="mis. Matematika" />
+      </div>
+      <div class="flex-1 min-w-[100px]">
+        <label class="text-xs font-semibold text-gray-600">Kelas</label>
+        <input id="filterKelas" placeholder="mis. 7.1" />
+      </div>
+      <button onclick="muatSoal()" class="btn btn-secondary">🔍 Cari</button>
+      <div class="flex-1"></div>
+      <label class="btn btn-secondary cursor-pointer">
+        📥 Impor Excel
+        <input type="file" id="fileExcel" accept=".xlsx,.xls" class="hidden" onchange="importExcel(event)" />
+      </label>
+      <button onclick="unduhTemplate()" class="btn btn-secondary">⬇️ Template Excel</button>
+      <button onclick="bukaModalTambah()" class="btn btn-primary">+ Tambah Soal</button>
+    </div>
+
+    <div id="importStatus" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
+
+    <!-- Tabel soal -->
+    <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
+      <table>
+        <thead>
+          <tr>
+            <th>No</th><th>Mapel</th><th>Kelas</th><th>Bab</th><th>Tipe</th>
+            <th>Soal</th><th>Bobot</th><th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tabelSoal"></tbody>
+      </table>
+      <p id="soalKosong" class="hidden text-center text-gray-400 py-10 text-sm">Belum ada soal. Klik "+ Tambah Soal" atau impor dari Excel.</p>
+    </div>
+  </main>
+</div>
+
+<!-- ============ MODAL TAMBAH/EDIT SOAL ============ -->
+<div id="modalSoal" class="hidden fixed inset-0 modal-bg flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+    <h2 class="font-bold navy-text text-lg mb-4" id="modalJudul">Tambah Soal</h2>
+    <input type="hidden" id="soalRow" />
+
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Mata Pelajaran</label>
+        <input id="fMapel" placeholder="Matematika" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Kelas</label>
+        <input id="fKelas" placeholder="7.1" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Bab</label>
+        <input id="fBab" placeholder="Bilangan Bulat" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Tingkat Kesulitan</label>
+        <select id="fTingkat">
+          <option>Mudah</option><option selected>Sedang</option><option>Sulit</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Bobot Nilai</label>
+        <input id="fBobot" type="number" value="1" min="1" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-600">Tipe Soal</label>
+        <select id="fTipe" onchange="renderOpsiFields()">
+          <option>Pilihan Ganda</option>
+          <option>Benar Salah</option>
+          <option>Menjodohkan</option>
+          <option>Isian Singkat</option>
+          <option>Uraian</option>
+        </select>
+      </div>
+    </div>
+
+    <label class="text-xs font-semibold text-gray-600">Teks Soal</label>
+    <textarea id="fSoal" rows="3" class="mb-3"></textarea>
+
+    <div id="opsiContainer" class="mb-3"></div>
+
+    <div class="grid grid-cols-3 gap-3 mb-3">
+      <div><label class="text-xs font-semibold text-gray-600">URL Gambar</label><input id="fGambar" placeholder="https://..." /></div>
+      <div><label class="text-xs font-semibold text-gray-600">URL Audio</label><input id="fAudio" placeholder="https://..." /></div>
+      <div><label class="text-xs font-semibold text-gray-600">URL Video</label><input id="fVideo" placeholder="https://..." /></div>
+    </div>
+
+    <label class="text-xs font-semibold text-gray-600">Pembahasan (opsional)</label>
+    <textarea id="fPembahasan" rows="2" class="mb-4"></textarea>
+
+    <div class="flex justify-end gap-3">
+      <button onclick="tutupModal()" class="btn btn-secondary">Batal</button>
+      <button onclick="simpanSoalForm()" class="btn btn-primary">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let TOKEN = null;
+let USER = null;
+let SOAL_CACHE = [];
+
+// ---------- Inisialisasi identitas dari config.js ----------
+document.getElementById('loginNamaApp').textContent = CONFIG.NAMA_APLIKASI;
+document.getElementById('loginNamaSekolah').textContent = CONFIG.NAMA_SEKOLAH;
+document.getElementById('loginLogo').src = CONFIG.LOGO_URL;
+document.getElementById('headerLogo').src = CONFIG.LOGO_URL;
+
+// Coba pulihkan sesi dari sessionStorage
+window.onload = function () {
+  const saved = sessionStorage.getItem('sesiTesOnline');
+  if (saved) {
+    const s = JSON.parse(saved);
+    TOKEN = s.token; USER = s.user;
+    tampilkanMain();
+  }
+};
+
+async function callApi(action, payload) {
+  const res = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, payload: payload || {}, token: TOKEN })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.message || 'Terjadi kesalahan.');
+  return json.data;
+}
+
+async function doLogin() {
+  const role = document.getElementById('loginRole').value;
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+
+  try {
+    const data = await callApi('login', { role, username, password });
+    if (!data.success) { errEl.textContent = data.message; return; }
+    TOKEN = data.token; USER = data.user;
+    sessionStorage.setItem('sesiTesOnline', JSON.stringify({ token: TOKEN, user: USER }));
+    tampilkanMain();
+  } catch (err) {
+    errEl.textContent = 'Gagal terhubung: ' + err.message;
+  }
+}
+
+function logoutUser() {
+  callApi('logout', {}).catch(function(){});
+  sessionStorage.removeItem('sesiTesOnline');
+  location.reload();
+}
+
+function tampilkanMain() {
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('mainView').classList.remove('hidden');
+  document.getElementById('headerUser').textContent = USER.nama + ' — ' + USER.role;
+  muatSoal();
+}
+
+// ---------- Muat & render tabel soal ----------
+async function muatSoal() {
+  try {
+    const payload = {
+      mapel: document.getElementById('filterMapel').value.trim(),
+      kelas: document.getElementById('filterKelas').value.trim()
+    };
+    SOAL_CACHE = await callApi('ambilBankSoal', payload);
+    renderTabel();
+  } catch (err) {
+    alert('Gagal memuat soal: ' + err.message);
+  }
+}
+
+function renderTabel() {
+  const tbody = document.getElementById('tabelSoal');
+  const kosong = document.getElementById('soalKosong');
+  tbody.innerHTML = '';
+  if (!SOAL_CACHE.length) { kosong.classList.remove('hidden'); return; }
+  kosong.classList.add('hidden');
+
+  SOAL_CACHE.forEach(function (s, i) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + (i + 1) + '</td>' +
+      '<td>' + esc(s.MAPEL) + '</td>' +
+      '<td>' + esc(s.KELAS) + '</td>' +
+      '<td>' + esc(s.BAB || '-') + '</td>' +
+      '<td><span class="badge bg-blue-100 text-blue-700">' + esc(s.TIPE_SOAL) + '</span></td>' +
+      '<td class="max-w-xs truncate">' + esc(s.SOAL) + '</td>' +
+      '<td>' + esc(s.BOBOT_NILAI) + '</td>' +
+      '<td class="whitespace-nowrap">' +
+        '<button onclick="editSoal(' + s._row + ')" class="btn btn-secondary" style="padding:4px 10px;">Edit</button> ' +
+        '<button onclick="konfirmasiHapus(' + s._row + ')" class="btn btn-danger" style="padding:4px 10px;">Hapus</button>' +
+      '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+
+// ---------- Modal tambah/edit ----------
+function bukaModalTambah() {
+  document.getElementById('modalJudul').textContent = 'Tambah Soal';
+  document.getElementById('soalRow').value = '';
+  ['fMapel','fKelas','fBab','fSoal','fGambar','fAudio','fVideo','fPembahasan'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('fBobot').value = 1;
+  document.getElementById('fTingkat').value = 'Sedang';
+  document.getElementById('fTipe').value = 'Pilihan Ganda';
+  renderOpsiFields();
+  document.getElementById('modalSoal').classList.remove('hidden');
+}
+
+function editSoal(row) {
+  const s = SOAL_CACHE.find(function (x) { return x._row === row; });
+  if (!s) return;
+  document.getElementById('modalJudul').textContent = 'Edit Soal';
+  document.getElementById('soalRow').value = s._row;
+  document.getElementById('fMapel').value = s.MAPEL;
+  document.getElementById('fKelas').value = s.KELAS;
+  document.getElementById('fBab').value = s.BAB;
+  document.getElementById('fTingkat').value = s.TINGKAT_KESULITAN;
+  document.getElementById('fBobot').value = s.BOBOT_NILAI;
+  document.getElementById('fTipe').value = s.TIPE_SOAL;
+  document.getElementById('fSoal').value = s.SOAL;
+  document.getElementById('fGambar').value = s.GAMBAR_URL;
+  document.getElementById('fAudio').value = s.AUDIO_URL;
+  document.getElementById('fVideo').value = s.VIDEO_URL;
+  document.getElementById('fPembahasan').value = s.PEMBAHASAN;
+  renderOpsiFields(s);
+  document.getElementById('modalSoal').classList.remove('hidden');
+}
+
+function tutupModal() { document.getElementById('modalSoal').classList.add('hidden'); }
+
+/**
+ * Menampilkan kolom opsi jawaban sesuai tipe soal yang dipilih.
+ */
+function renderOpsiFields(existing) {
+  const tipe = document.getElementById('fTipe').value;
+  const c = document.getElementById('opsiContainer');
+  existing = existing || {};
+
+  if (tipe === 'Pilihan Ganda') {
+    c.innerHTML =
+      '<label class="text-xs font-semibold text-gray-600">Opsi Jawaban (isi minimal A-D)</label>' +
+      '<div class="grid grid-cols-2 gap-2 mb-2">' +
+        ['A','B','C','D','E'].map(function(h){
+          return '<input id="fOpsi'+h+'" placeholder="Opsi '+h+'" value="'+esc(existing['OPSI_'+h]||'')+'" />';
+        }).join('') +
+      '</div>' +
+      '<label class="text-xs font-semibold text-gray-600">Kunci Jawaban (contoh: A)</label>' +
+      '<input id="fKunci" value="'+esc(existing.KUNCI_JAWABAN||'')+'" placeholder="A" />';
+  } else if (tipe === 'Benar Salah') {
+    c.innerHTML =
+      '<label class="text-xs font-semibold text-gray-600">Kunci Jawaban</label>' +
+      '<select id="fKunci">' +
+        '<option value="Benar"'+(existing.KUNCI_JAWABAN==='Benar'?' selected':'')+'>Benar</option>' +
+        '<option value="Salah"'+(existing.KUNCI_JAWABAN==='Salah'?' selected':'')+'>Salah</option>' +
+      '</select>';
+  } else if (tipe === 'Menjodohkan') {
+    c.innerHTML =
+      '<label class="text-xs font-semibold text-gray-600">Pasangan (format: kiri1=kanan1;kiri2=kanan2)</label>' +
+      '<input id="fKunci" value="'+esc(existing.KUNCI_JAWABAN||'')+'" placeholder="Jakarta=Ibukota;Bandung=Kota Kembang" />';
+  } else if (tipe === 'Isian Singkat') {
+    c.innerHTML =
+      '<label class="text-xs font-semibold text-gray-600">Kunci Jawaban (teks)</label>' +
+      '<input id="fKunci" value="'+esc(existing.KUNCI_JAWABAN||'')+'" placeholder="Jawaban singkat" />';
+  } else { // Uraian
+    c.innerHTML =
+      '<label class="text-xs font-semibold text-gray-600">Kunci / Pedoman Penilaian (opsional, dinilai manual oleh guru)</label>' +
+      '<textarea id="fKunci" rows="2">'+esc(existing.KUNCI_JAWABAN||'')+'</textarea>';
+  }
+}
+
+async function simpanSoalForm() {
+  const tipe = document.getElementById('fTipe').value;
+  const payload = {
+    _row: document.getElementById('soalRow').value || null,
+    mapel: document.getElementById('fMapel').value.trim(),
+    kelas: document.getElementById('fKelas').value.trim(),
+    bab: document.getElementById('fBab').value.trim(),
+    tingkatKesulitan: document.getElementById('fTingkat').value,
+    bobot: document.getElementById('fBobot').value,
+    tipeSoal: tipe,
+    soal: document.getElementById('fSoal').value.trim(),
+    gambarUrl: document.getElementById('fGambar').value.trim(),
+    audioUrl: document.getElementById('fAudio').value.trim(),
+    videoUrl: document.getElementById('fVideo').value.trim(),
+    pembahasan: document.getElementById('fPembahasan').value.trim(),
+    kunciJawaban: document.getElementById('fKunci') ? document.getElementById('fKunci').value.trim() : ''
+  };
+  if (tipe === 'Pilihan Ganda') {
+    ['A','B','C','D','E'].forEach(function(h){
+      const el = document.getElementById('fOpsi'+h);
+      payload['opsi'+h] = el ? el.value.trim() : '';
+    });
+  }
+
+  try {
+    await callApi('simpanSoal', payload);
+    tutupModal();
+    muatSoal();
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+  }
+}
+
+async function konfirmasiHapus(row) {
+  if (!confirm('Hapus soal ini? Tindakan tidak bisa dibatalkan.')) return;
+  try {
+    await callApi('hapusSoal', { _row: row });
+    muatSoal();
+  } catch (err) {
+    alert('Gagal menghapus: ' + err.message);
+  }
+}
+
+// ---------- Impor Excel ----------
+function unduhTemplate() {
+  const header = ['mapel','kelas','bab','tingkatKesulitan','bobot','tipeSoal','soal',
+    'opsiA','opsiB','opsiC','opsiD','opsiE','kunciJawaban','gambarUrl','audioUrl','videoUrl','pembahasan'];
+  const contoh = ['Matematika','7.1','Bilangan Bulat','Mudah',1,'Pilihan Ganda','Hasil dari -5 + 8 adalah ...',
+    '-13','3','-3','13','','B','','','','Karena -5 + 8 = 3'];
+  const ws = XLSX.utils.aoa_to_sheet([header, contoh]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Soal');
+  XLSX.writeFile(wb, 'Template_Impor_Bank_Soal.xlsx');
+}
+
+function importExcel(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('importStatus');
+  const reader = new FileReader();
+
+  reader.onload = async function (e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      if (!rows.length) throw new Error('File Excel kosong atau format tidak sesuai template.');
+
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';
+      statusEl.textContent = 'Mengimpor ' + rows.length + ' soal...';
+
+      const hasil = await callApi('importSoalMassal', { daftarSoal: rows });
+
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-green-50 text-green-700';
+      statusEl.textContent = 'Berhasil impor ' + hasil.berhasil + ' dari ' + hasil.totalDiajukan + ' soal.' +
+        (hasil.gagal.length ? ' Gagal: ' + hasil.gagal.map(function(g){ return 'baris '+g.baris+' ('+g.alasan+')'; }).join(', ') : '');
+
+      muatSoal();
+    } catch (err) {
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-red-50 text-red-700';
+      statusEl.textContent = 'Gagal impor: ' + err.message;
+    } finally {
+      evt.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+</script>
+</body>
+</html>
