@@ -88,6 +88,13 @@
         <div id="daftarUjianHariIni" class="space-y-2"></div>
         <p id="tidakAdaUjian" class="hidden text-sm text-gray-400 text-center py-6">Tidak ada ujian yang dijadwalkan hari ini.</p>
       </div>
+
+      <div class="bg-white rounded-xl shadow-sm p-5 mt-6">
+        <h2 class="font-bold navy-text mb-2">Perbaikan Nilai yang Hilang</h2>
+        <p class="text-xs text-gray-500 mb-3">Jika ada sesi ujian berstatus "Selesai" tapi nilainya tidak muncul di hasil, klik tombol ini untuk menghitung ulang.</p>
+        <button onclick="perbaikiNilaiHilang()" class="btn btn-secondary">🔧 Hitung Ulang Nilai yang Hilang</button>
+        <div id="hasilPerbaikan" class="mt-4 text-sm"></div>
+      </div>
     </section>
 
     <!-- ===== TAB KELOLA SISWA ===== -->
@@ -282,6 +289,26 @@ function esc(str) {
   return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
   });
+}
+
+// ---------- PERBAIKAN NILAI YANG HILANG ----------
+async function perbaikiNilaiHilang() {
+  const hasilEl = document.getElementById('hasilPerbaikan');
+  hasilEl.textContent = 'Memproses...';
+  try {
+    const r = await callApi('hitungUlangSemuaHasil', {});
+    let html = '<p class="text-green-700 font-semibold">Selesai: ' + r.berhasil + ' dari ' + r.totalDiproses + ' sesi berhasil dihitung ulang.</p>';
+    if (r.gagal.length) {
+      html += '<div class="mt-2 p-3 bg-red-50 rounded-lg"><p class="font-semibold text-red-700 mb-1">Gagal (' + r.gagal.length + '):</p>';
+      r.gagal.forEach(function (g) {
+        html += '<p class="text-red-600 text-xs">• Sesi ' + esc(g.idSesi) + ' (NISN ' + esc(g.nisn) + '): ' + esc(g.alasan) + '</p>';
+      });
+      html += '</div>';
+    }
+    hasilEl.innerHTML = html;
+  } catch (err) {
+    hasilEl.innerHTML = '<p class="text-red-600">Gagal menjalankan perbaikan: ' + esc(err.message) + '</p>';
+  }
 }
 
 // ---------- TAB NAVIGASI ----------
