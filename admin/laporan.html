@@ -22,12 +22,12 @@
   .tab-btn.active { color: #1E3A5F; border-color: #1E3A5F; }
   .kartu { border: 2px solid #1E3A5F; border-radius: 10px; padding: 16px; page-break-inside: avoid; }
 
-  /* Sembunyikan elemen non-cetak saat print, tampilkan hanya area laporan aktif */
+  /* Saat mencetak: sembunyikan tombol/menu (elemen ber-class no-print).
+     Tab yang sedang tidak aktif otomatis sudah tersembunyi (class "hidden"
+     dari Tailwind), jadi hanya konten tab yang sedang dibuka yang tercetak. */
   @media print {
-    body * { visibility: hidden; }
-    #areaCetak, #areaCetak * { visibility: visible; }
-    #areaCetak { position: absolute; left: 0; top: 0; width: 100%; }
     .no-print { display: none !important; }
+    body { background: #fff; }
   }
 </style>
 </head>
@@ -100,7 +100,7 @@
         <button onclick="cetakLaporan()" class="btn btn-secondary">🖨️ Cetak PDF</button>
         <button onclick="unduhExcelAnalisis()" class="btn btn-primary">⬇️ Unduh Excel</button>
       </div>
-      <div id="analisisWrap" class="hidden bg-white rounded-xl shadow-sm p-5" id="areaCetakAnalisis">
+      <div id="analisisWrap" class="hidden bg-white rounded-xl shadow-sm p-5">
         <h2 class="font-bold navy-text text-lg mb-4">Analisis Butir Soal</h2>
         <table>
           <thead><tr><th>No</th><th>Soal</th><th>Tipe</th><th>Dijawab</th><th>Benar</th><th>Tk. Kesukaran</th><th>Kategori</th><th>Daya Pembeda</th><th>Kategori</th></tr></thead>
