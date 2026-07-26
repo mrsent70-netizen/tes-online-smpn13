@@ -15,10 +15,17 @@
   .btn-primary:hover { background: #16304d; }
   .btn-secondary { background: #E5EDF5; color: #1E3A5F; }
   input { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; font-size: 14px; width: 100%; }
+  .kelas-card { border: 2px solid #E5EDF5; border-radius: 14px; padding: 24px; text-align: center; cursor: pointer; transition: 0.15s; background: #fff; }
+  .kelas-card:hover { border-color: #1E3A5F; transform: translateY(-2px); }
+  .kelas-card.terkunci { opacity: 0.4; cursor: not-allowed; }
+  .kelas-card.terkunci:hover { transform: none; border-color: #E5EDF5; }
+  .mapel-card { border: 1px solid #E5EDF5; border-radius: 12px; padding: 16px; background: #fff; cursor: pointer; transition: 0.15s; }
+  .mapel-card:hover { border-color: #1E3A5F; box-shadow: 0 4px 12px rgba(30,58,95,0.1); }
 </style>
 </head>
 <body class="min-h-screen">
 
+<!-- ============ LOGIN ============ -->
 <div id="loginView" class="min-h-screen flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
     <div class="text-center mb-6">
@@ -35,28 +42,76 @@
   </div>
 </div>
 
-<div id="mainView" class="hidden min-h-screen flex items-center justify-center p-4">
-  <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm text-center">
-    <img id="mainLogo" class="h-14 mx-auto mb-3" alt="Logo Sekolah" />
-    <h1 class="font-bold navy-text mb-1" id="namaSiswaTampil"></h1>
-    <p class="text-xs text-gray-500 mb-6" id="kelasSiswaTampil"></p>
-
-    <p class="text-sm text-gray-600 mb-2 text-left">Masukkan token ujian dari guru/admin untuk mulai mengerjakan:</p>
-    <div class="flex gap-2">
-      <input id="tokenInput" placeholder="Token" class="uppercase text-center font-bold tracking-widest" maxlength="6" />
-      <button onclick="mulaiUjian()" class="btn btn-primary whitespace-nowrap">Mulai</button>
+<!-- ============ HALAMAN UTAMA (setelah login) ============ -->
+<div id="mainView" class="hidden min-h-screen">
+  <header class="navy text-white px-6 py-4 flex items-center justify-between shadow">
+    <div class="flex items-center gap-3">
+      <img id="headerLogo" class="h-9" alt="Logo" />
+      <div>
+        <h1 class="font-bold text-sm" id="namaSiswaTampil"></h1>
+        <p class="text-xs text-blue-200" id="kelasSiswaTampil"></p>
+      </div>
     </div>
-    <button onclick="logoutUser()" class="btn btn-secondary w-full mt-6">Keluar</button>
-  </div>
+    <button onclick="logoutUser()" class="btn btn-secondary">Keluar</button>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-6">
+
+    <!-- ===== TAHAP 1: PILIH KELAS (TEMA TEST) ===== -->
+    <div id="viewKelas">
+      <h2 class="text-center font-bold navy-text text-xl mb-1">🎓 Tema Test</h2>
+      <p class="text-center text-sm text-gray-500 mb-8">Pilih kelas untuk melihat mata pelajaran yang sedang diujikan</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="kelas-card" data-grade="7" onclick="pilihKelas('7')">
+          <p class="text-4xl mb-2">📘</p>
+          <p class="font-bold navy-text text-lg">Kelas VII</p>
+          <p class="text-xs text-gray-400 mt-1">7.1 — 7.9</p>
+        </div>
+        <div class="kelas-card" data-grade="8" onclick="pilihKelas('8')">
+          <p class="text-4xl mb-2">📗</p>
+          <p class="font-bold navy-text text-lg">Kelas VIII</p>
+          <p class="text-xs text-gray-400 mt-1">8.1 — 8.11</p>
+        </div>
+        <div class="kelas-card" data-grade="9" onclick="pilihKelas('9')">
+          <p class="text-4xl mb-2">📙</p>
+          <p class="font-bold navy-text text-lg">Kelas IX</p>
+          <p class="text-xs text-gray-400 mt-1">9.1 — 9.10</p>
+        </div>
+      </div>
+      <p class="text-center text-xs text-gray-400 mt-6">Sistem hanya menampilkan ujian untuk kelas Anda sendiri.</p>
+
+      <div class="text-center mt-8">
+        <button onclick="tampilkanTokenManual()" class="text-xs text-gray-400 underline">Punya token ujian? Masukkan manual di sini</button>
+      </div>
+      <div id="tokenManualBox" class="hidden max-w-sm mx-auto mt-4 bg-white rounded-xl shadow-sm p-5">
+        <label class="text-xs font-semibold text-gray-600">Token Ujian</label>
+        <div class="flex gap-2 mt-1">
+          <input id="tokenInput" placeholder="Token" class="uppercase text-center font-bold tracking-widest" maxlength="6" />
+          <button onclick="mulaiDenganTokenManual()" class="btn btn-primary whitespace-nowrap">Mulai</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAHAP 2: PILIH MAPEL ===== -->
+    <div id="viewMapel" class="hidden">
+      <button onclick="kembaliKeKelas()" class="text-sm navy-text mb-4 font-semibold">← Kembali</button>
+      <h2 class="font-bold navy-text text-xl mb-1" id="judulKelasDipilih">Mata Pelajaran Kelas VII</h2>
+      <p class="text-sm text-gray-500 mb-6">Pilih mata pelajaran yang sedang diujikan hari ini</p>
+
+      <div id="daftarMapel" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+      <p id="mapelKosong" class="hidden text-center text-gray-400 py-16 text-sm">Belum ada ujian yang aktif untuk kelas Anda hari ini.<br/>Silakan hubungi guru/admin jika ini tidak sesuai.</p>
+    </div>
+  </main>
 </div>
 
 <script>
 let TOKEN = null, USER = null;
+let GRADE_SAYA = null; // angka kelas siswa (7/8/9), diambil dari USER.kelas
 
 document.getElementById('loginNamaApp').textContent = CONFIG.NAMA_APLIKASI;
 document.getElementById('loginNamaSekolah').textContent = CONFIG.NAMA_SEKOLAH;
 document.getElementById('loginLogo').src = CONFIG.LOGO_URL;
-document.getElementById('mainLogo').src = CONFIG.LOGO_URL;
+document.getElementById('headerLogo').src = CONFIG.LOGO_URL;
 
 window.onload = function () {
   const saved = sessionStorage.getItem('sesiTesOnline');
@@ -99,14 +154,76 @@ function tampilkanMain() {
   document.getElementById('mainView').classList.remove('hidden');
   document.getElementById('namaSiswaTampil').textContent = USER.nama;
   document.getElementById('kelasSiswaTampil').textContent = 'Kelas ' + USER.kelas;
+
+  // Ambil angka kelas (7/8/9) dari format "7.1", "8.11", dst.
+  GRADE_SAYA = String(USER.kelas).split('.')[0].split('-')[0].trim();
+
+  // Tandai kartu kelas yang bukan milik siswa sebagai terkunci (tetap terlihat, tapi tidak bisa diklik)
+  document.querySelectorAll('.kelas-card').forEach(function (card) {
+    if (card.dataset.grade !== GRADE_SAYA) card.classList.add('terkunci');
+  });
 }
 
-function mulaiUjian() {
-  const token = document.getElementById('tokenInput').value.trim().toUpperCase();
-  if (!token) { alert('Masukkan token ujian terlebih dahulu.'); return; }
-  // Simpan token sementara supaya ujian.html bisa langsung memakainya
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+
+// ---------- PILIH KELAS ----------
+async function pilihKelas(grade) {
+  if (grade !== GRADE_SAYA) {
+    alert('Ini bukan kelas Anda. Sistem hanya menampilkan ujian untuk kelas ' + GRADE_SAYA + '.');
+    return;
+  }
+
+  const romawi = { '7': 'VII', '8': 'VIII', '9': 'IX' }[grade] || grade;
+  document.getElementById('judulKelasDipilih').textContent = 'Mata Pelajaran Kelas ' + romawi;
+  document.getElementById('viewKelas').classList.add('hidden');
+  document.getElementById('viewMapel').classList.remove('hidden');
+
+  const daftarEl = document.getElementById('daftarMapel');
+  daftarEl.innerHTML = '<p class="text-sm text-gray-400 col-span-2 text-center py-10">Memuat...</p>';
+
+  try {
+    const daftar = await callApi('ambilMapelUjianHariIni', {});
+    daftarEl.innerHTML = '';
+    document.getElementById('mapelKosong').classList.toggle('hidden', daftar.length > 0);
+
+    daftar.forEach(function (m) {
+      const div = document.createElement('div');
+      div.className = 'mapel-card';
+      div.innerHTML =
+        '<p class="font-bold navy-text">' + esc(m.mapel) + '</p>' +
+        '<p class="text-xs text-gray-500 mb-2">' + esc(m.namaUjian) + '</p>' +
+        '<p class="text-xs text-gray-400">⏰ ' + esc(m.jamMulai) + ' - ' + esc(m.jamSelesai) + '</p>';
+      div.onclick = function () { mulaiUjianDenganToken(m.token); };
+      daftarEl.appendChild(div);
+    });
+  } catch (err) {
+    daftarEl.innerHTML = '<p class="text-sm text-red-500 col-span-2 text-center py-10">Gagal memuat: ' + esc(err.message) + '</p>';
+  }
+}
+
+function kembaliKeKelas() {
+  document.getElementById('viewMapel').classList.add('hidden');
+  document.getElementById('viewKelas').classList.remove('hidden');
+}
+
+// ---------- MULAI UJIAN ----------
+function mulaiUjianDenganToken(token) {
   sessionStorage.setItem('tokenUjianDipilih', token);
   window.location.href = 'ujian.html?token=' + encodeURIComponent(token);
+}
+
+function tampilkanTokenManual() {
+  document.getElementById('tokenManualBox').classList.toggle('hidden');
+}
+
+function mulaiDenganTokenManual() {
+  const token = document.getElementById('tokenInput').value.trim().toUpperCase();
+  if (!token) { alert('Masukkan token ujian terlebih dahulu.'); return; }
+  mulaiUjianDenganToken(token);
 }
 </script>
 </body>
