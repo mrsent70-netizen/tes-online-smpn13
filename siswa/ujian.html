@@ -220,7 +220,16 @@ async function mulaiUjianForm() {
     aktifkanAntiCheat();
     mulaiTimer();
     renderNavigasi();
-    tampilkanSoal(0);
+
+    // Jika sesi disambung ulang (koneksi sempat putus), lanjutkan tepat
+    // di soal pertama yang BELUM dijawab, bukan selalu balik ke soal 1 —
+    // supaya siswa tidak kehilangan jejak posisi terakhirnya.
+    let indexMulai = 0;
+    if (SESI.jawabanTersimpan && SESI.jawabanTersimpan.length) {
+      const idxBelumDijawab = SOAL.findIndex(function (s) { return !JAWABAN[s.nomorSoal]; });
+      if (idxBelumDijawab > -1) indexMulai = idxBelumDijawab;
+    }
+    tampilkanSoal(indexMulai);
   } catch (err) {
     errEl.textContent = err.message;
   }
