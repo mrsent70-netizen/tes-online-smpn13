@@ -8,21 +8,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../assets/js/config.js"></script>
 <style>
+  :root { --tema: #1E3A5F; --tema-hover: #16304d; --tema-soft: #E5EDF5; --tema-soft-hover: #d5e0ed; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; }
-  .navy { background-color: #1E3A5F; }
-  .navy-text { color: #1E3A5F; }
+  .navy { background-color: var(--tema); }
+  .navy-text { color: var(--tema); }
   .btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.15s; }
-  .btn-primary { background: #1E3A5F; color: #fff; }
-  .btn-primary:hover { background: #16304d; }
-  .btn-secondary { background: #E5EDF5; color: #1E3A5F; }
-  .btn-secondary:hover { background: #d5e0ed; }
+  .btn-primary { background: var(--tema); color: #fff; }
+  .btn-primary:hover { background: var(--tema-hover); }
+  .btn-secondary { background: var(--tema-soft); color: var(--tema); }
+  .btn-secondary:hover { background: var(--tema-soft-hover); }
   .btn-danger { background: #FEE2E2; color: #B91C1C; }
   .btn-danger:hover { background: #fecaca; }
   input, select, textarea { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font-size: 14px; width: 100%; }
   .modal-bg { background: rgba(15, 23, 42, 0.5); }
   table { border-collapse: collapse; width: 100%; }
   th, td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #e5e7eb; }
-  th { background: #f8fafc; color: #1E3A5F; font-weight: 700; position: sticky; top: 0; }
+  th { background: #f8fafc; color: var(--tema); font-weight: 700; position: sticky; top: 0; }
   tr:hover { background: #f8fafc; }
   .badge { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 </style>
@@ -224,7 +225,25 @@ function tampilkanMain() {
   document.getElementById('loginView').classList.add('hidden');
   document.getElementById('mainView').classList.remove('hidden');
   document.getElementById('headerUser').textContent = USER.nama + ' — ' + USER.role;
+  terapkanTemaSesuaiRole();
   muatSoal();
+}
+
+/**
+ * Halaman ini dipakai bersama oleh ADMIN dan GURU. Supaya kedua role
+ * tidak tertukar secara visual, warna tema otomatis berubah sesuai
+ * siapa yang login: ADMIN tetap biru tua (warna utama sekolah),
+ * GURU jadi hijau tosca.
+ */
+function terapkanTemaSesuaiRole() {
+  const root = document.documentElement.style;
+  if (USER.role === 'GURU') {
+    root.setProperty('--tema', '#0F766E');
+    root.setProperty('--tema-hover', '#0d5f58');
+    root.setProperty('--tema-soft', '#E0F2F1');
+    root.setProperty('--tema-soft-hover', '#c9e9e7');
+  }
+  // ADMIN memakai warna default (biru tua) yang sudah diatur di :root
 }
 
 // ---------- Muat & render tabel soal ----------
