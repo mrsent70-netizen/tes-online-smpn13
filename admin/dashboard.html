@@ -595,6 +595,51 @@ async function simpanPaketForm() {
     if (hasil.created) alert('Paket ujian dibuat. Token: ' + (payload.tokenUjian || '(dibuat otomatis, lihat tabel)'));
   } catch (err) { alert('Gagal menyimpan: ' + err.message); }
 }
+// ---------- IMPOR EXCEL PAKET UJIAN ----------
+function unduhTemplatePaket() {
+  const header = ['namaUjian','mapel','kelas','tanggal','jamMulai','jamSelesai','durasiMenit',
+    'token','jumlahSoalTampil','nilaiMinimum','maksimalLogin','batasPelanggaran',
+    'acakSoal','acakJawaban','tampilkanNilai','tampilkanPembahasan','bolehKembali','fullscreenWajib'];
+  const contoh1 = ['SAT - Bahasa Indonesia','Bahasa Indonesia','7','2026-12-07','07:30','09:30',60,
+    '',25,60,1,3,'TRUE','TRUE','TRUE','FALSE','TRUE','TRUE'];
+  const contoh2 = ['SAT - Pendidikan Agama','Pendidikan Agama','7','2026-12-07','10:00','11:30',60,
+    '',25,60,1,3,'TRUE','TRUE','TRUE','FALSE','TRUE','TRUE'];
+  const catatan = ['Catatan: kolom "kelas" boleh diisi per rombel (mis. 7.1) ATAU per tingkat (mis. 7 saja = berlaku untuk semua rombel kelas 7). Kolom token boleh dikosongkan (dibuat otomatis).'];
+  const ws = XLSX.utils.aoa_to_sheet([header, contoh1, contoh2, [], catatan]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'PaketUjian');
+  XLSX.writeFile(wb, 'Template_Impor_PaketUjian.xlsx');
+}
+
+function importPaketExcel(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('importPaketStatus');
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }).filter(function (r) { return r.namaUjian; });
+      if (!rows.length) throw new Error('File kosong atau format tidak sesuai template.');
+
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-blue-50 text-blue-700';
+      statusEl.textContent = 'Mengimpor ' + rows.length + ' paket ujian...';
+
+      const hasil = await callApi('importPaketMassal', { daftarPaket: rows });
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-green-50 text-green-700';
+      statusEl.textContent = 'Berhasil impor ' + hasil.berhasil + ' dari ' + hasil.totalDiajukan + ' paket ujian.' +
+        (hasil.gagal.length ? ' Gagal: ' + hasil.gagal.map(function(g){ return 'baris '+g.baris+' ('+g.alasan+')'; }).join(', ') : '');
+      muatPaket();
+    } catch (err) {
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'mb-4 p-3 rounded-lg text-sm bg-red-50 text-red-700';
+      statusEl.textContent = 'Gagal impor: ' + err.message;
+    } finally { evt.target.value = ''; }
+  };
+  reader.readAsArrayBuffer(file);
+}
 
 async function toggleAktif(row, statusSaatIni) {
   try { await callApi('toggleAktifPaket', { _row: row, statusAktif: statusSaatIni }); muatPaket(); }
