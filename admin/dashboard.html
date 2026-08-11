@@ -130,9 +130,15 @@
 
     <!-- ===== TAB PAKET UJIAN ===== -->
     <section id="tab-paket" class="hidden">
-      <div class="flex justify-end mb-4">
-        <button onclick="bukaModalPaket()" class="btn btn-primary">+ Buat Paket Ujian</button>
-      </div>
+      <div class="flex justify-end gap-2 mb-4">
+  <label class="btn btn-secondary cursor-pointer">
+    📥 Impor Excel
+    <input type="file" id="fileExcelPaket" accept=".xlsx,.xls" class="hidden" onchange="importPaketExcel(event)" />
+  </label>
+  <button onclick="unduhTemplatePaket()" class="btn btn-secondary">⬇️ Template Excel</button>
+  <button onclick="bukaModalPaket()" class="btn btn-primary">+ Buat Paket Ujian</button>
+</div>
+<div id="importPaketStatus" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
       <div class="bg-white rounded-xl shadow-sm overflow-x-auto">
         <table>
           <thead><tr><th>Nama Ujian</th><th>Mapel</th><th>Kelas</th><th>Tanggal</th><th>Jam</th><th>Token</th><th>Status</th><th>Aksi</th></tr></thead>
