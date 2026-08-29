@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Konversi Soal Word — Sistem Tes Online SMPN 13 Bandar Lampung</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
+<script src="../assets/js/config.js"></script>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; }
+  .navy { background-color: #1E3A5F; }
+  .navy-text { color: #1E3A5F; }
+  .btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: 0.15s; border: none; }
+  .btn-primary { background: #1E3A5F; color: #fff; }
+  .btn-primary:hover { background: #16304d; }
+  .btn-secondary { background: #E5EDF5; color: #1E3A5F; }
+  .btn-secondary:hover { background: #d5e0ed; }
+  .btn-danger { background: #FEE2E2; color: #B91C1C; }
+  .btn-danger:hover { background: #fecaca; }
+  input, select, textarea { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font-size: 13px; width: 100%; }
+  .card { background: #fff; border-radius: 14px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .row-soal { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-bottom: 12px; background: #fff; }
+  .row-soal.flagged { border-color: #F59E0B; background: #FFFBEB; }
+  .badge-flag { background: #FEF3C7; color: #92400E; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
+  .thumb.selected { border-color: #1E3A5F; }
+  .opsi-label { font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 2px; display: block; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<div id="belumLogin" class="min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm text-center">
+    <p class="text-gray-600 mb-4">Anda perlu login terlebih dahulu dari Dashboard Admin atau Dashboard Guru sebelum membuka alat ini.</p>
+    <a href="dashboard.html" class="btn btn-primary" style="text-decoration:none; display:inline-block;">Ke Dashboard Admin</a>
+  </div>
+</div>
+
+<div id="mainView" class="hidden">
+  <header class="navy text-white px-6 py-4 flex items-center justify-between shadow sticky top-0 z-10">
+    <div>
+      <h1 class="font-bold text-sm">Konversi Soal Word ke Bank Soal</h1>
+      <p class="text-xs text-blue-200" id="headerUser"></p>
+    </div>
+    <a href="dashboard.html" class="btn btn-secondary" style="text-decoration:none;">← Kembali ke Dashboard</a>
+  </header>
+
+  <main class="p-6 max-w-5xl mx-auto space-y-5">
+
+    <div class="card">
+      <h2 class="font-bold navy-text mb-3">1. Pengaturan Default</h2>
+      <p class="text-xs text-gray-500 mb-3">Nilai ini akan diterapkan ke semua soal hasil konversi. Bisa diubah lagi per-baris di tabel review nanti.</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div><label class="opsi-label">Mata Pelajaran</label><input id="defMapel" placeholder="mis. IPA" /></div>
+        <div><label class="opsi-label">Kelas</label><input id="defKelas" placeholder="mis. 9" /></div>
+        <div><label class="opsi-label">Bab (opsional)</label><input id="defBab" placeholder="" /></div>
+        <div><label class="opsi-label">Bobot Nilai</label><input id="defBobot" type="number" value="1" /></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="font-bold navy-text mb-3">2. Upload File Word (.docx)</h2>
+      <p class="text-xs text-gray-500 mb-3">Format yang dikenali: soal bernomor ("1.", "2.", dst), pilihan berlabel a/b/c/d, jawaban benar ditandai <b>cetak tebal</b>. Gambar di badan soal akan otomatis di-upload ke Drive.</p>
+      <input type="file" id="fileWord" accept=".docx" />
+      <div id="statusProses" class="mt-3 text-sm"></div>
+    </div>
+
+    <div id="hasilArea" class="hidden card">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-bold navy-text">3. Review Hasil (<span id="jumlahSoal">0</span> soal terdeteksi)</h2>
+        <div class="flex gap-2">
+          <button onclick="unduhExcel()" class="btn btn-secondary">⬇️ Unduh Excel</button>
+          <button onclick="simpanKeBankSoal()" class="btn btn-primary">💾 Simpan Semua ke Bank Soal</button>
+        </div>
+      </div>
+      <p class="text-xs text-amber-700 mb-3">🟡 Baris berlatar kuning = terdeteksi lebih dari satu gambar untuk satu soal (kemungkinan gambar adalah bagian dari pilihan jawaban) — cek dan pilih gambar utamanya, atau lengkapi manual.</p>
+      <div id="daftarSoal"></div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+let TOKEN = null, USER = null;
+let SOAL_HASIL = []; // { nomor, soal, opsiA..D, kunciJawaban, gambarUrl, kandidatGambar: [url,...], flagged }
+
+window.onload = function () {
+  const saved = sessionStorage.getItem('sesiTesOnline');
+  if (saved) {
+    const s = JSON.parse(saved);
+    TOKEN = s.token; USER = s.user;
+    if (USER.role === 'ADMIN' || USER.role === 'GURU') {
+      document.getElementById('belumLogin').classList.add('hidden');
+      document.getElementById('mainView').classList.remove('hidden');
+      document.getElementById('headerUser').textContent = USER.nama + ' — ' + USER.role;
+      return;
+    }
+  }
+};
+
+async function callApi(action, payload) {
+  const res = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, payload: payload || {}, token: TOKEN })
+  });
+  const json = await res.json();
+  if (!json.success) throw new Error(json.message || 'Terjadi kesalahan.');
+  return json.data;
+}
+
+function esc(str) {
+  return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+
+// ---------- UPLOAD & PARSE FILE WORD ----------
+document.getElementById('fileWord').addEventListener('change', async function (evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('statusProses');
+  statusEl.className = 'mt-3 text-sm text-blue-700';
+  statusEl.textContent = 'Membaca file Word...';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+
+    // Kumpulkan gambar yang ditemukan, dalam base64 murni (tanpa prefix data:...)
+    const gambarDitemukan = []; // { id, base64, mimeType }
+    let counterGambar = 0;
+
+    const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer }, {
+      convertImage: mammoth.images.imgElement(function (image) {
+        return image.read('base64').then(function (imageBuffer) {
+          counterGambar++;
+          const idPlaceholder = 'GBR_' + counterGambar;
+          gambarDitemukan.push({ id: idPlaceholder, base64: imageBuffer, mimeType: image.contentType });
+          // Tandai posisi gambar dengan atribut data-gbr-id supaya bisa dilacak setelah upload
+          return { src: '', 'data-gbr-id': idPlaceholder };
+        });
+      })
+    });
+
+    statusEl.textContent = 'Meng-upload ' + gambarDitemukan.length + ' gambar ke Drive...';
+
+    // Upload semua gambar, dapatkan peta id -> url publik
+    const petaUrlGambar = {};
+    for (let i = 0; i < gambarDitemukan.length; i++) {
+      const g = gambarDitemukan[i];
+      statusEl.textContent = 'Meng-upload gambar ' + (i + 1) + ' dari ' + gambarDitemukan.length + '...';
+      try {
+        const ekstensi = g.mimeType.indexOf('png') > -1 ? 'png' : 'jpg';
+        const hasilUpload = await callApi('uploadGambarSoal', {
+          namaFile: 'soal_' + Date.now() + '_' + (i + 1) + '.' + ekstensi,
+          base64Data: g.base64,
+          mimeType: g.mimeType
+        });
+        petaUrlGambar[g.id] = hasilUpload.url;
+      } catch (errUpload) {
+        console.error('Gagal upload gambar ' + g.id, errUpload);
+      }
+    }
+
+    statusEl.textContent = 'Menganalisis struktur soal...';
+    SOAL_HASIL = parseHtmlSoal(result.value, petaUrlGambar);
+
+    if (!SOAL_HASIL.length) {
+      statusEl.className = 'mt-3 text-sm text-red-600';
+      statusEl.textContent = 'Tidak ada soal bernomor yang terdeteksi. Periksa format file Word.';
+      return;
+    }
+
+    statusEl.className = 'mt-3 text-sm text-green-700';
+    statusEl.textContent = SOAL_HASIL.length + ' soal berhasil dibaca. Silakan cek tabel review di bawah sebelum menyimpan.';
+    tampilkanHasil();
+  } catch (err) {
+    statusEl.className = 'mt-3 text-sm text-red-600';
+    statusEl.textContent = 'Gagal memproses file: ' + err.message;
+  } finally {
+    evt.target.value = '';
+  }
+});
+
+/**
+ * Parsing inti: menyusuri elemen HTML hasil konversi mammoth secara
+ * berurutan. Setiap <li> (soal bernomor dari Word) memulai soal baru;
+ * paragraf/elemen setelahnya (opsi a-d, gambar) dikumpulkan sampai
+ * <li> berikutnya ditemukan.
+ */
+function parseHtmlSoal(html, petaUrlGambar) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const semuaElemen = Array.from(doc.body.children);
+
+  const daftarSoal = [];
+  let soalAktif = null;
+  let nomorCounter = 0;
+
+  function tandaiBold(el) {
+    // Ganti <strong>teks</strong> dengan @@B@@teks@@/B@@ supaya bisa
+    // dideteksi lewat regex teks biasa nanti.
+    const klon = el.cloneNode(true);
+    klon.querySelectorAll('strong, b').forEach(function (s) {
+      const marker = doc.createTextNode('@@B@@' + s.textContent + '@@/B@@');
+      s.replaceWith(marker);
+    });
+    return klon.textContent;
+  }
+
+  function cariGambar(el) {
+    return Array.from(el.querySelectorAll('img[data-gbr-id]')).map(function (img) {
+      const id = img.getAttribute('data-gbr-id');
+      return petaUrlGambar[id];
+    }).filter(Boolean);
+  }
+
+  function mulaiSoalBaru() {
+    nomorCounter++;
+    soalAktif = { nomor: nomorCounter, teksStem: '', teksSisa: '', gambar: [] };
+    daftarSoal.push(soalAktif);
+  }
+
+  semuaElemen.forEach(function (el) {
+    const liDalam = el.tagName === 'OL' ? Array.from(el.querySelectorAll('li')) : (el.tagName === 'LI' ? [el] : []);
+
+    if (liDalam.length) {
+      liDalam.forEach(function (li) {
+        mulaiSoalBaru();
+        soalAktif.teksStem = tandaiBold(li).trim();
+        soalAktif.gambar = soalAktif.gambar.concat(cariGambar(li));
+      });
+    } else if (soalAktif) {
+      soalAktif.teksSisa += ' ' + tandaiBold(el);
+      soalAktif.gambar = soalAktif.gambar.concat(cariGambar(el));
+    }
+  });
+
+  return daftarSoal.map(function (s) { return susunSoalDariTeks(s); }).filter(Boolean);
+}
+
+/**
+ * Dari teksSisa (gabungan semua paragraf setelah nomor soal),
+ * ekstrak opsi a/b/c/d dengan mencari label huruf di mana pun
+ * posisinya (menangani tata letak 2 kolom seperti "a. X c. Y").
+ * Opsi yang mengandung penanda @@B@@ dianggap kunci jawaban.
+ */
+function susunSoalDariTeks(s) {
+  const teks = s.teksSisa;
+  const regexLabel = /(?:^|\s)([a-dA-D])\s*[\.\)]\s*/g;
+  const temuan = [];
+  let m;
+  while ((m = regexLabel.exec(teks)) !== null) {
+    temuan.push({ huruf: m[1].toLowerCase(), mulai: m.index + m[0].length });
+  }
+
+  const opsi = { a: '', b: '', c: '', d: '' };
+  let kunciJawaban = '';
+
+  temuan.forEach(function (item, idx) {
+    const akhir = idx + 1 < temuan.length ? temuan[idx + 1].mulai - (temuan[idx + 1].huruf.length + 2) : teks.length;
+    let potongan = teks.slice(item.mulai, akhir).trim();
+    if (potongan.indexOf('@@B@@') > -1) {
+      kunciJawaban = item.huruf.toUpperCase();
+    }
+    potongan = potongan.replace(/@@B@@/g, '').replace(/@@\/B@@/g, '').trim();
+    if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
+  });
+
+  const teksSoalBersih = s.teksStem.replace(/@@B@@/g, '').replace(/@@\/B@@/g, '').trim();
+
+  return {
+    nomor: s.nomor,
+    soal: teksSoalBersih,
+    opsiA: opsi.a, opsiB: opsi.b, opsiC: opsi.c, opsiD: opsi.d,
+    kunciJawaban: kunciJawaban,
+    kandidatGambar: s.gambar,
+    gambarUrl: s.gambar.length === 1 ? s.gambar[0] : '',
+    flagged: s.gambar.length > 1
+  };
+}
+
+// ---------- TAMPILKAN TABEL REVIEW ----------
+function tampilkanHasil() {
+  document.getElementById('hasilArea').classList.remove('hidden');
+  document.getElementById('jumlahSoal').textContent = SOAL_HASIL.length;
+  const cont = document.getElementById('daftarSoal');
+  cont.innerHTML = '';
+
+  SOAL_HASIL.forEach(function (s, idx) {
+    const div = document.createElement('div');
+    div.className = 'row-soal' + (s.flagged ? ' flagged' : '');
+
+    let gambarHtml = '';
+    if (s.kandidatGambar.length > 1) {
+      gambarHtml = '<div class="mb-2"><span class="badge-flag">⚠ ' + s.kandidatGambar.length + ' gambar ditemukan — pilih salah satu sebagai gambar utama</span><div class="flex gap-2 mt-2">' +
+        s.kandidatGambar.map(function (url) {
+          return '<img src="' + esc(url) + '" class="thumb' + (url === s.gambarUrl ? ' selected' : '') + '" onclick="pilihGambar(' + idx + ',\'' + esc(url) + '\')" />';
+        }).join('') + '</div></div>';
+    } else if (s.kandidatGambar.length === 1) {
+      gambarHtml = '<div class="mb-2"><img src="' + esc(s.gambarUrl) + '" class="thumb selected" /></div>';
+    }
+
+    div.innerHTML =
+      '<div class="flex justify-between items-start mb-2">' +
+        '<span class="font-bold navy-text">Soal #' + s.nomor + '</span>' +
+        '<button onclick="hapusBaris(' + idx + ')" class="btn btn-danger" style="padding:2px 8px; font-size:12px;">Hapus</button>' +
+      '</div>' +
+      gambarHtml +
+      '<label class="opsi-label">Teks Soal</label>' +
+      '<textarea rows="2" onchange="ubahField(' + idx + ',\'soal\',this.value)">' + esc(s.soal) + '</textarea>' +
+      '<div class="grid grid-cols-2 gap-2 mt-2">' +
+        ['A','B','C','D'].map(function (h) {
+          return '<div><label class="opsi-label">Opsi ' + h + (s.kunciJawaban === h ? ' ✅ (kunci)' : '') + '</label>' +
+            '<input value="' + esc(s['opsi' + h]) + '" onchange="ubahField(' + idx + ',\'opsi' + h + '\',this.value)" /></div>';
+        }).join('') +
+      '</div>' +
+      '<div class="mt-2 max-w-[160px]">' +
+        '<label class="opsi-label">Kunci Jawaban</label>' +
+        '<select onchange="ubahField(' + idx + ',\'kunciJawaban\',this.value)">' +
+          ['', 'A','B','C','D'].map(function (h) {
+            return '<option value="' + h + '"' + (s.kunciJawaban === h ? ' selected' : '') + '>' + (h || '(pilih)') + '</option>';
+          }).join('') +
+        '</select>' +
+      '</div>';
+    cont.appendChild(div);
+  });
+}
+
+function ubahField(idx, field, value) { SOAL_HASIL[idx][field] = value; }
+function pilihGambar(idx, url) { SOAL_HASIL[idx].gambarUrl = url; tampilkanHasil(); }
+function hapusBaris(idx) { SOAL_HASIL.splice(idx, 1); tampilkanHasil(); }
+
+// ---------- SIMPAN / UNDUH ----------
+function daftarUntukDisimpan() {
+  const mapel = document.getElementById('defMapel').value.trim();
+  const kelas = document.getElementById('defKelas').value.trim();
+  const bab = document.getElementById('defBab').value.trim();
+  const bobot = document.getElementById('defBobot').value || 1;
+
+  return SOAL_HASIL.map(function (s) {
+    return {
+      nomor: s.nomor,
+      mapel: mapel, kelas: kelas, bab: bab, bobot: bobot,
+      tipeSoal: 'Pilihan Ganda',
+      soal: s.soal,
+      opsiA: s.opsiA, opsiB: s.opsiB, opsiC: s.opsiC, opsiD: s.opsiD, opsiE: '',
+      kunciJawaban: s.kunciJawaban,
+      gambarUrl: s.gambarUrl, audioUrl: '', videoUrl: '', pembahasan: ''
+    };
+  });
+}
+
+async function simpanKeBankSoal() {
+  const mapel = document.getElementById('defMapel').value.trim();
+  const kelas = document.getElementById('defKelas').value.trim();
+  if (!mapel || !kelas) { alert('Mata Pelajaran dan Kelas wajib diisi dulu di bagian atas.'); return; }
+
+  const tanpaKunci = SOAL_HASIL.filter(function (s) { return !s.kunciJawaban; });
+  if (tanpaKunci.length) {
+    if (!confirm(tanpaKunci.length + ' soal belum punya kunci jawaban terdeteksi (nomor: ' +
+      tanpaKunci.map(function(s){return s.nomor;}).join(', ') + '). Tetap lanjutkan menyimpan?')) return;
+  }
+
+  try {
+    const hasil = await callApi('importSoalMassal', { daftarSoal: daftarUntukDisimpan() });
+    alert('Berhasil menyimpan ' + hasil.berhasil + ' dari ' + hasil.totalDiajukan + ' soal ke Bank Soal.' +
+      (hasil.gagal.length ? '\nGagal: ' + hasil.gagal.map(function(g){ return 'baris '+g.baris+' ('+g.alasan+')'; }).join(', ') : ''));
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+  }
+}
+
+function unduhExcel() {
+  const data = daftarUntukDisimpan();
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'BankSoal');
+  XLSX.writeFile(wb, 'Hasil_Konversi_Soal.xlsx');
+}
+</script>
+</body>
+</html>
