@@ -128,7 +128,24 @@ function parseXml(str) {
 }
 
 function getRunText(rEl) {
-  return Array.from(rEl.getElementsByTagName('w:t')).map(function (t) { return t.textContent; }).join('');
+  // PENTING: jangan hanya ambil <w:t> — Word sering memisahkan opsi
+  // berkolom (mis. "a. mistar [tab] c. Jangka sorong") dengan elemen
+  // <w:tab/> yang TIDAK menyimpan karakter apa pun di <w:t>. Kalau
+  // elemen ini diabaikan, dua opsi jadi nyambung tanpa spasi sama
+  // sekali (mis. "mistarc.") dan label opsi berikutnya jadi tak
+  // terbaca. Jadi kita telusuri SEMUA node anak run secara berurutan,
+  // bukan cuma query <w:t> saja.
+  let hasil = '';
+  Array.from(rEl.childNodes).forEach(function (node) {
+    if (node.nodeName === 'w:t') {
+      hasil += node.textContent;
+    } else if (node.nodeName === 'w:tab') {
+      hasil += ' ';
+    } else if (node.nodeName === 'w:br' || node.nodeName === 'w:cr') {
+      hasil += ' ';
+    }
+  });
+  return hasil;
 }
 function isRunBold(rEl) {
   const rPr = rEl.getElementsByTagName('w:rPr')[0];
