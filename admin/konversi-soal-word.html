@@ -118,6 +118,11 @@ function esc(str) {
 
 // ================== PARSING DOCX DARI XML ASLI ==================
 
+// Karakter kontrol tak-tercetak, aman dipakai sebagai penanda internal
+// (tidak akan pernah muncul dalam teks soal sungguhan).
+const PENANDA_BOLD_MULAI = '\u0001';
+const PENANDA_BOLD_SELESAI = '\u0002';
+
 function parseXml(str) {
   return new DOMParser().parseFromString(str, 'application/xml');
 }
@@ -146,9 +151,13 @@ function parseParagraph(pEl) {
   }
   let markedText = '';
   const imageRIds = [];
+  // Penanda bold pakai 1 karakter kontrol (bukan token banyak-karakter
+  // seperti "@@B@@"), supaya regex anchor di ekstrakOpsiDariTeksPolos()
+  // tidak pernah "memakan sebagian" token dan menyisakan pecahan aneh
+  // di teks (mis. sisa "@@B@" nyempil di hasil).
   Array.from(pEl.getElementsByTagName('w:r')).forEach(function (r) {
     const t = getRunText(r);
-    if (t) markedText += isRunBold(r) ? ('@@B@@' + t + '@@/B@@') : t;
+    if (t) markedText += isRunBold(r) ? (PENANDA_BOLD_MULAI + t + PENANDA_BOLD_SELESAI) : t;
     imageRIds.push.apply(imageRIds, getRunImageRIds(r));
   });
   return { numId: numId, text: markedText, imageRIds: imageRIds };
@@ -272,7 +281,7 @@ async function prosesDocxFile(file) {
 }
 
 function bersihkanMarker(teks) {
-  return teks.replace(/@@B@@/g, '').replace(/@@\/B@@/g, '');
+  return teks.split(PENANDA_BOLD_MULAI).join('').split(PENANDA_BOLD_SELESAI).join('');
 }
 
 /**
@@ -282,7 +291,12 @@ function bersihkanMarker(teks) {
  * (kasus jawaban benar yang huruf labelnya ikut di-bold).
  */
 function ekstrakOpsiDariTeksPolos(teks) {
-  const regexLabel = /(?:^|[^a-zA-Z0-9])([a-dA-D])(?:@@B@@|@@\/B@@)*\s*[\.\)]\s*/g;
+  // Karena penanda bold sekarang 1 karakter kontrol (bukan token
+  // banyak-karakter), dia otomatis lolos syarat "(?:^|[^a-zA-Z0-9])"
+  // sebagai anchor, dan grup toleransi di bawah cukup menyapu berapa
+  // pun penanda yang menempel setelah huruf label — tidak ada lagi
+  // risiko "termakan sebagian" seperti token multi-karakter dulu.
+  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + '])*\\s*[.\\)]\\s*', 'g');
   const temuan = [];
   let m;
   while ((m = regexLabel.exec(teks)) !== null) {
@@ -293,7 +307,7 @@ function ekstrakOpsiDariTeksPolos(teks) {
   temuan.forEach(function (item, idx) {
     const akhir = idx + 1 < temuan.length ? temuan[idx + 1].labelStart : teks.length;
     let potongan = teks.slice(item.contentStart, akhir).trim();
-    if (potongan.indexOf('@@B@@') > -1) kunciJawaban = item.huruf.toUpperCase();
+    if (potongan.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = item.huruf.toUpperCase();
     potongan = bersihkanMarker(potongan).trim();
     if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
   });
@@ -312,7 +326,7 @@ function susunSoalDariData(s) {
     const huruf = ['a', 'b', 'c', 'd', 'e'];
     s.subDaftar.forEach(function (teksItem, idx) {
       if (idx >= huruf.length) return;
-      if (teksItem.indexOf('@@B@@') > -1) kunciJawaban = huruf[idx].toUpperCase();
+      if (teksItem.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = huruf[idx].toUpperCase();
       opsi[huruf[idx]] = bersihkanMarker(teksItem).trim();
     });
   }
