@@ -6,7 +6,7 @@
 <title>Konversi Soal Word — Sistem Tes Online SMPN 13 Bandar Lampung</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1.7.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="../assets/js/config.js"></script>
 <style>
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; }
@@ -62,7 +62,7 @@
 
     <div class="card">
       <h2 class="font-bold navy-text mb-3">2. Upload File Word (.docx)</h2>
-      <p class="text-xs text-gray-500 mb-3">Format yang dikenali: soal bernomor ("1.", "2.", dst), pilihan berlabel a/b/c/d, jawaban benar ditandai <b>cetak tebal</b>. Gambar di badan soal akan otomatis di-upload ke Drive.</p>
+      <p class="text-xs text-gray-500 mb-3">Format yang dikenali: soal bernomor (penomoran otomatis Word), jawaban benar ditandai <b>cetak tebal</b> (baik teks pilihan biasa "a. b. c. d." maupun opsi berbentuk daftar). Gambar otomatis di-upload ke Drive.</p>
       <input type="file" id="fileWord" accept=".docx" />
       <div id="statusProses" class="mt-3 text-sm"></div>
     </div>
@@ -75,7 +75,7 @@
           <button onclick="simpanKeBankSoal()" class="btn btn-primary">💾 Simpan Semua ke Bank Soal</button>
         </div>
       </div>
-      <p class="text-xs text-amber-700 mb-3">🟡 Baris berlatar kuning = terdeteksi lebih dari satu gambar untuk satu soal (kemungkinan gambar adalah bagian dari pilihan jawaban) — cek dan pilih gambar utamanya, atau lengkapi manual.</p>
+      <p class="text-xs text-amber-700 mb-3">🟡 Baris berlatar kuning = ada hal yang perlu dicek (gambar ganda, atau kunci jawaban tidak terdeteksi). Selalu cek seluruh tabel sebelum menyimpan — parsing ini best-effort, bukan sempurna. Kalau ada soal yang ternyata pecahan dari soal sebelumnya, hapus barisnya dan gabungkan manual dengan tombol "Gabung ke atas".</p>
       <div id="daftarSoal"></div>
     </div>
 
@@ -84,7 +84,7 @@
 
 <script>
 let TOKEN = null, USER = null;
-let SOAL_HASIL = []; // { nomor, soal, opsiA..D, kunciJawaban, gambarUrl, kandidatGambar: [url,...], flagged }
+let SOAL_HASIL = [];
 
 window.onload = function () {
   const saved = sessionStorage.getItem('sesiTesOnline');
@@ -116,7 +116,226 @@ function esc(str) {
   });
 }
 
-// ---------- UPLOAD & PARSE FILE WORD ----------
+// ================== PARSING DOCX DARI XML ASLI ==================
+
+function parseXml(str) {
+  return new DOMParser().parseFromString(str, 'application/xml');
+}
+
+function getRunText(rEl) {
+  return Array.from(rEl.getElementsByTagName('w:t')).map(function (t) { return t.textContent; }).join('');
+}
+function isRunBold(rEl) {
+  const rPr = rEl.getElementsByTagName('w:rPr')[0];
+  if (!rPr) return false;
+  const b = rPr.getElementsByTagName('w:b')[0];
+  if (!b) return false;
+  const val = b.getAttribute('w:val');
+  return val === null || val === '1' || val === 'true';
+}
+function getRunImageRIds(rEl) {
+  return Array.from(rEl.getElementsByTagName('a:blip')).map(function (b) { return b.getAttribute('r:embed'); }).filter(Boolean);
+}
+
+function parseParagraph(pEl) {
+  const numPr = pEl.getElementsByTagName('w:numPr')[0];
+  let numId = null;
+  if (numPr) {
+    const numIdEl = numPr.getElementsByTagName('w:numId')[0];
+    if (numIdEl) numId = numIdEl.getAttribute('w:val');
+  }
+  let markedText = '';
+  const imageRIds = [];
+  Array.from(pEl.getElementsByTagName('w:r')).forEach(function (r) {
+    const t = getRunText(r);
+    if (t) markedText += isRunBold(r) ? ('@@B@@' + t + '@@/B@@') : t;
+    imageRIds.push.apply(imageRIds, getRunImageRIds(r));
+  });
+  return { numId: numId, text: markedText, imageRIds: imageRIds };
+}
+
+/**
+ * Inti algoritma: membedakan "soal bernomor baru" dari "sub-daftar"
+ * (pernyataan/opsi yang juga diberi format daftar bernomor oleh Word,
+ * BUKAN soal baru). Aturannya: sekali sebuah numId ditetapkan sebagai
+ * "penomoran soal utama", setiap paragraf lain dengan numId BERBEDA
+ * yang nanti KEMBALI ke numId utama tersebut dianggap sub-daftar
+ * (disisipkan di tengah); kalau tidak pernah kembali, numId baru itu
+ * dianggap kelanjutan penomoran utama (Word kadang mengganti nomor
+ * urut list di tengah dokumen karena alasan format internal).
+ */
+function klasifikasikanRuns(infoList) {
+  const runs = [];
+  let current = null;
+  infoList.forEach(function (item) {
+    if (item.numId === null) { current = null; return; }
+    if (current && current.numId === item.numId) { current.items.push(item); }
+    else { current = { numId: item.numId, items: [item], isMain: false }; runs.push(current); }
+  });
+  if (!runs.length) return runs;
+
+  let mainNumId = runs[0].numId;
+  runs[0].isMain = true;
+  let i = 1;
+  while (i < runs.length) {
+    const r = runs[i];
+    if (r.numId === mainNumId) { r.isMain = true; i++; continue; }
+    let j = i;
+    while (j < runs.length && runs[j].numId !== mainNumId) j++;
+    if (j < runs.length) {
+      i = j;
+    } else {
+      mainNumId = r.numId;
+      r.isMain = true;
+      i++;
+    }
+  }
+  return runs;
+}
+
+async function prosesDocxFile(file) {
+  const zip = await JSZip.loadAsync(file);
+  const xmlDocStr = await zip.file('word/document.xml').async('string');
+  const relsStr = await zip.file('word/_rels/document.xml.rels').async('string');
+
+  const xmlDoc = parseXml(xmlDocStr);
+  const relsDoc = parseXml(relsStr);
+  const petaRels = {};
+  Array.from(relsDoc.getElementsByTagName('Relationship')).forEach(function (rel) {
+    petaRels[rel.getAttribute('Id')] = rel.getAttribute('Target');
+  });
+
+  const body = xmlDoc.getElementsByTagName('w:body')[0];
+  const paragraphs = Array.from(body.childNodes).filter(function (n) { return n.nodeName === 'w:p'; });
+  const infoList = paragraphs.map(parseParagraph);
+
+  const runs = klasifikasikanRuns(infoList);
+  const petaRunPerItem = new Map();
+  runs.forEach(function (run) {
+    run.items.forEach(function (item) { petaRunPerItem.set(item, run.isMain); });
+  });
+
+  const semuaRIds = new Set();
+  infoList.forEach(function (item) { item.imageRIds.forEach(function (id) { semuaRIds.add(id); }); });
+
+  const petaUrlGambar = {};
+  const daftarRIds = Array.from(semuaRIds);
+  for (let k = 0; k < daftarRIds.length; k++) {
+    const rId = daftarRIds[k];
+    const target = petaRels[rId];
+    if (!target) continue;
+    const path = 'word/' + target.replace(/^\.?\//, '');
+    const fileZip = zip.file(path);
+    if (!fileZip) continue;
+    document.getElementById('statusProses').textContent = 'Meng-upload gambar ' + (k + 1) + ' dari ' + daftarRIds.length + '...';
+    const base64 = await fileZip.async('base64');
+    const ekstensi = (path.split('.').pop() || 'jpg').toLowerCase();
+    const mimeType = ekstensi === 'png' ? 'image/png' : (ekstensi === 'gif' ? 'image/gif' : 'image/jpeg');
+    try {
+      const hasilUpload = await callApi('uploadGambarSoal', {
+        namaFile: 'soal_' + Date.now() + '_' + (k + 1) + '.' + ekstensi,
+        base64Data: base64,
+        mimeType: mimeType
+      });
+      petaUrlGambar[rId] = hasilUpload.url;
+    } catch (err) {
+      console.error('Gagal upload gambar', rId, err);
+    }
+  }
+
+  const daftarSoal = [];
+  let soalAktif = null;
+  let nomorCounter = 0;
+
+  function gambarDariItem(item) {
+    return item.imageRIds.map(function (id) { return petaUrlGambar[id]; }).filter(Boolean);
+  }
+
+  infoList.forEach(function (item) {
+    if (item.numId !== null) {
+      const isMain = petaRunPerItem.get(item);
+      if (isMain) {
+        nomorCounter++;
+        soalAktif = { nomor: nomorCounter, teksStem: item.text, teksOpsiPlain: '', subDaftar: [], gambar: gambarDariItem(item) };
+        daftarSoal.push(soalAktif);
+      } else if (soalAktif) {
+        soalAktif.subDaftar.push(item.text);
+        soalAktif.gambar = soalAktif.gambar.concat(gambarDariItem(item));
+      }
+    } else if (soalAktif) {
+      soalAktif.teksOpsiPlain += ' ' + item.text;
+      soalAktif.gambar = soalAktif.gambar.concat(gambarDariItem(item));
+    }
+  });
+
+  return daftarSoal.map(susunSoalDariData).filter(Boolean);
+}
+
+function bersihkanMarker(teks) {
+  return teks.replace(/@@B@@/g, '').replace(/@@\/B@@/g, '');
+}
+
+/**
+ * Ekstrak opsi a/b/c/d dari teks polos "a. ... b. ... c. ... d. ...",
+ * menangani tata letak berkolom (label bisa di mana saja). Toleran
+ * terhadap penanda @@B@@/@@/B@@ yang menempel langsung di huruf label
+ * (kasus jawaban benar yang huruf labelnya ikut di-bold).
+ */
+function ekstrakOpsiDariTeksPolos(teks) {
+  const regexLabel = /(?:^|[^a-zA-Z0-9])([a-dA-D])(?:@@B@@|@@\/B@@)*\s*[\.\)]\s*/g;
+  const temuan = [];
+  let m;
+  while ((m = regexLabel.exec(teks)) !== null) {
+    temuan.push({ huruf: m[1].toLowerCase(), labelStart: m.index, contentStart: m.index + m[0].length });
+  }
+  const opsi = { a: '', b: '', c: '', d: '' };
+  let kunciJawaban = '';
+  temuan.forEach(function (item, idx) {
+    const akhir = idx + 1 < temuan.length ? temuan[idx + 1].labelStart : teks.length;
+    let potongan = teks.slice(item.contentStart, akhir).trim();
+    if (potongan.indexOf('@@B@@') > -1) kunciJawaban = item.huruf.toUpperCase();
+    potongan = bersihkanMarker(potongan).trim();
+    if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
+  });
+  return { opsi: opsi, kunciJawaban: kunciJawaban, jumlahDitemukan: temuan.length };
+}
+
+function susunSoalDariData(s) {
+  let opsi = { a: '', b: '', c: '', d: '' };
+  let kunciJawaban = '';
+
+  const hasilPlain = ekstrakOpsiDariTeksPolos(s.teksOpsiPlain);
+  if (hasilPlain.jumlahDitemukan >= 2) {
+    opsi = hasilPlain.opsi;
+    kunciJawaban = hasilPlain.kunciJawaban;
+  } else if (s.subDaftar.length >= 2 && s.subDaftar.length <= 5) {
+    const huruf = ['a', 'b', 'c', 'd', 'e'];
+    s.subDaftar.forEach(function (teksItem, idx) {
+      if (idx >= huruf.length) return;
+      if (teksItem.indexOf('@@B@@') > -1) kunciJawaban = huruf[idx].toUpperCase();
+      opsi[huruf[idx]] = bersihkanMarker(teksItem).trim();
+    });
+  }
+
+  let teksSoal = bersihkanMarker(s.teksStem).trim();
+  if (hasilPlain.jumlahDitemukan >= 2 && s.subDaftar.length) {
+    const tambahan = s.subDaftar.map(function (t, i) { return (i + 1) + ') ' + bersihkanMarker(t).trim(); }).join(' ');
+    if (tambahan.trim()) teksSoal += ' ' + tambahan;
+  }
+
+  return {
+    nomor: s.nomor,
+    soal: teksSoal,
+    opsiA: opsi.a, opsiB: opsi.b, opsiC: opsi.c, opsiD: opsi.d,
+    kunciJawaban: kunciJawaban,
+    kandidatGambar: s.gambar,
+    gambarUrl: s.gambar.length === 1 ? s.gambar[0] : '',
+    flagged: s.gambar.length > 1 || !kunciJawaban
+  };
+}
+
+// ================== UPLOAD & JALANKAN ==================
+
 document.getElementById('fileWord').addEventListener('change', async function (evt) {
   const file = evt.target.files[0];
   if (!file) return;
@@ -125,46 +344,7 @@ document.getElementById('fileWord').addEventListener('change', async function (e
   statusEl.textContent = 'Membaca file Word...';
 
   try {
-    const arrayBuffer = await file.arrayBuffer();
-
-    // Kumpulkan gambar yang ditemukan, dalam base64 murni (tanpa prefix data:...)
-    const gambarDitemukan = []; // { id, base64, mimeType }
-    let counterGambar = 0;
-
-    const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer }, {
-      convertImage: mammoth.images.imgElement(function (image) {
-        return image.read('base64').then(function (imageBuffer) {
-          counterGambar++;
-          const idPlaceholder = 'GBR_' + counterGambar;
-          gambarDitemukan.push({ id: idPlaceholder, base64: imageBuffer, mimeType: image.contentType });
-          // Tandai posisi gambar dengan atribut data-gbr-id supaya bisa dilacak setelah upload
-          return { src: '', 'data-gbr-id': idPlaceholder };
-        });
-      })
-    });
-
-    statusEl.textContent = 'Meng-upload ' + gambarDitemukan.length + ' gambar ke Drive...';
-
-    // Upload semua gambar, dapatkan peta id -> url publik
-    const petaUrlGambar = {};
-    for (let i = 0; i < gambarDitemukan.length; i++) {
-      const g = gambarDitemukan[i];
-      statusEl.textContent = 'Meng-upload gambar ' + (i + 1) + ' dari ' + gambarDitemukan.length + '...';
-      try {
-        const ekstensi = g.mimeType.indexOf('png') > -1 ? 'png' : 'jpg';
-        const hasilUpload = await callApi('uploadGambarSoal', {
-          namaFile: 'soal_' + Date.now() + '_' + (i + 1) + '.' + ekstensi,
-          base64Data: g.base64,
-          mimeType: g.mimeType
-        });
-        petaUrlGambar[g.id] = hasilUpload.url;
-      } catch (errUpload) {
-        console.error('Gagal upload gambar ' + g.id, errUpload);
-      }
-    }
-
-    statusEl.textContent = 'Menganalisis struktur soal...';
-    SOAL_HASIL = parseHtmlSoal(result.value, petaUrlGambar);
+    SOAL_HASIL = await prosesDocxFile(file);
 
     if (!SOAL_HASIL.length) {
       statusEl.className = 'mt-3 text-sm text-red-600';
@@ -173,115 +353,18 @@ document.getElementById('fileWord').addEventListener('change', async function (e
     }
 
     statusEl.className = 'mt-3 text-sm text-green-700';
-    statusEl.textContent = SOAL_HASIL.length + ' soal berhasil dibaca. Silakan cek tabel review di bawah sebelum menyimpan.';
+    statusEl.textContent = SOAL_HASIL.length + ' soal berhasil dibaca. WAJIB cek tabel review di bawah sebelum menyimpan — jumlah soal terdeteksi bisa saja sedikit meleset dari jumlah soal asli, dan itu normal.';
     tampilkanHasil();
   } catch (err) {
     statusEl.className = 'mt-3 text-sm text-red-600';
     statusEl.textContent = 'Gagal memproses file: ' + err.message;
+    console.error(err);
   } finally {
     evt.target.value = '';
   }
 });
 
-/**
- * Parsing inti: menyusuri elemen HTML hasil konversi mammoth secara
- * berurutan. Setiap <li> (soal bernomor dari Word) memulai soal baru;
- * paragraf/elemen setelahnya (opsi a-d, gambar) dikumpulkan sampai
- * <li> berikutnya ditemukan.
- */
-function parseHtmlSoal(html, petaUrlGambar) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const semuaElemen = Array.from(doc.body.children);
-
-  const daftarSoal = [];
-  let soalAktif = null;
-  let nomorCounter = 0;
-
-  function tandaiBold(el) {
-    // Ganti <strong>teks</strong> dengan @@B@@teks@@/B@@ supaya bisa
-    // dideteksi lewat regex teks biasa nanti.
-    const klon = el.cloneNode(true);
-    klon.querySelectorAll('strong, b').forEach(function (s) {
-      const marker = doc.createTextNode('@@B@@' + s.textContent + '@@/B@@');
-      s.replaceWith(marker);
-    });
-    return klon.textContent;
-  }
-
-  function cariGambar(el) {
-    return Array.from(el.querySelectorAll('img[data-gbr-id]')).map(function (img) {
-      const id = img.getAttribute('data-gbr-id');
-      return petaUrlGambar[id];
-    }).filter(Boolean);
-  }
-
-  function mulaiSoalBaru() {
-    nomorCounter++;
-    soalAktif = { nomor: nomorCounter, teksStem: '', teksSisa: '', gambar: [] };
-    daftarSoal.push(soalAktif);
-  }
-
-  semuaElemen.forEach(function (el) {
-    const liDalam = el.tagName === 'OL' ? Array.from(el.querySelectorAll('li')) : (el.tagName === 'LI' ? [el] : []);
-
-    if (liDalam.length) {
-      liDalam.forEach(function (li) {
-        mulaiSoalBaru();
-        soalAktif.teksStem = tandaiBold(li).trim();
-        soalAktif.gambar = soalAktif.gambar.concat(cariGambar(li));
-      });
-    } else if (soalAktif) {
-      soalAktif.teksSisa += ' ' + tandaiBold(el);
-      soalAktif.gambar = soalAktif.gambar.concat(cariGambar(el));
-    }
-  });
-
-  return daftarSoal.map(function (s) { return susunSoalDariTeks(s); }).filter(Boolean);
-}
-
-/**
- * Dari teksSisa (gabungan semua paragraf setelah nomor soal),
- * ekstrak opsi a/b/c/d dengan mencari label huruf di mana pun
- * posisinya (menangani tata letak 2 kolom seperti "a. X c. Y").
- * Opsi yang mengandung penanda @@B@@ dianggap kunci jawaban.
- */
-function susunSoalDariTeks(s) {
-  const teks = s.teksSisa;
-  const regexLabel = /(?:^|\s)([a-dA-D])\s*[\.\)]\s*/g;
-  const temuan = [];
-  let m;
-  while ((m = regexLabel.exec(teks)) !== null) {
-    temuan.push({ huruf: m[1].toLowerCase(), mulai: m.index + m[0].length });
-  }
-
-  const opsi = { a: '', b: '', c: '', d: '' };
-  let kunciJawaban = '';
-
-  temuan.forEach(function (item, idx) {
-    const akhir = idx + 1 < temuan.length ? temuan[idx + 1].mulai - (temuan[idx + 1].huruf.length + 2) : teks.length;
-    let potongan = teks.slice(item.mulai, akhir).trim();
-    if (potongan.indexOf('@@B@@') > -1) {
-      kunciJawaban = item.huruf.toUpperCase();
-    }
-    potongan = potongan.replace(/@@B@@/g, '').replace(/@@\/B@@/g, '').trim();
-    if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
-  });
-
-  const teksSoalBersih = s.teksStem.replace(/@@B@@/g, '').replace(/@@\/B@@/g, '').trim();
-
-  return {
-    nomor: s.nomor,
-    soal: teksSoalBersih,
-    opsiA: opsi.a, opsiB: opsi.b, opsiC: opsi.c, opsiD: opsi.d,
-    kunciJawaban: kunciJawaban,
-    kandidatGambar: s.gambar,
-    gambarUrl: s.gambar.length === 1 ? s.gambar[0] : '',
-    flagged: s.gambar.length > 1
-  };
-}
-
-// ---------- TAMPILKAN TABEL REVIEW ----------
+// ================== TAMPILKAN TABEL REVIEW ==================
 function tampilkanHasil() {
   document.getElementById('hasilArea').classList.remove('hidden');
   document.getElementById('jumlahSoal').textContent = SOAL_HASIL.length;
@@ -304,8 +387,11 @@ function tampilkanHasil() {
 
     div.innerHTML =
       '<div class="flex justify-between items-start mb-2">' +
-        '<span class="font-bold navy-text">Soal #' + s.nomor + '</span>' +
-        '<button onclick="hapusBaris(' + idx + ')" class="btn btn-danger" style="padding:2px 8px; font-size:12px;">Hapus</button>' +
+        '<span class="font-bold navy-text">Soal #' + s.nomor + (!s.kunciJawaban ? ' <span class="badge-flag">kunci belum terdeteksi</span>' : '') + '</span>' +
+        '<div class="flex gap-2">' +
+          '<button onclick="gabungKeAtas(' + idx + ')" class="btn btn-secondary" style="padding:2px 8px; font-size:12px;">↑ Gabung ke atas</button>' +
+          '<button onclick="hapusBaris(' + idx + ')" class="btn btn-danger" style="padding:2px 8px; font-size:12px;">Hapus</button>' +
+        '</div>' +
       '</div>' +
       gambarHtml +
       '<label class="opsi-label">Teks Soal</label>' +
@@ -331,8 +417,24 @@ function tampilkanHasil() {
 function ubahField(idx, field, value) { SOAL_HASIL[idx][field] = value; }
 function pilihGambar(idx, url) { SOAL_HASIL[idx].gambarUrl = url; tampilkanHasil(); }
 function hapusBaris(idx) { SOAL_HASIL.splice(idx, 1); tampilkanHasil(); }
+function gabungKeAtas(idx) {
+  if (idx === 0) { alert('Ini baris pertama, tidak ada baris di atasnya.'); return; }
+  const atas = SOAL_HASIL[idx - 1];
+  const ini = SOAL_HASIL[idx];
+  atas.soal = (atas.soal + ' ' + ini.soal).trim();
+  if (!atas.opsiA) atas.opsiA = ini.opsiA;
+  if (!atas.opsiB) atas.opsiB = ini.opsiB;
+  if (!atas.opsiC) atas.opsiC = ini.opsiC;
+  if (!atas.opsiD) atas.opsiD = ini.opsiD;
+  if (!atas.kunciJawaban) atas.kunciJawaban = ini.kunciJawaban;
+  atas.kandidatGambar = atas.kandidatGambar.concat(ini.kandidatGambar);
+  if (!atas.gambarUrl) atas.gambarUrl = ini.gambarUrl;
+  atas.flagged = atas.kandidatGambar.length > 1 || !atas.kunciJawaban;
+  SOAL_HASIL.splice(idx, 1);
+  tampilkanHasil();
+}
 
-// ---------- SIMPAN / UNDUH ----------
+// ================== SIMPAN / UNDUH ==================
 function daftarUntukDisimpan() {
   const mapel = document.getElementById('defMapel').value.trim();
   const kelas = document.getElementById('defKelas').value.trim();
