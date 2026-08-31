@@ -27,6 +27,15 @@
   .thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
   .thumb.selected { border-color: #1E3A5F; }
   .opsi-label { font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 2px; display: block; }
+
+  /* ===== Gaya modal Preview — SENGAJA disalin persis dari siswa/ujian.html
+     (warna navy oranye #B45309, kartu opsi .pv-opsi) supaya preview ini
+     benar-benar identik dengan yang akan dilihat siswa, bukan cuma mirip. ===== */
+  .pv-navy { background-color: #B45309; }
+  .pv-navy-text { color: #B45309; }
+  .pv-opsi { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px 16px; }
+  .pv-opsi-kunci { border-color: #B45309; background: #FEF3E2; font-weight: 600; }
+  .pv-modal-bg { background: rgba(15, 23, 42, 0.6); }
 </style>
 </head>
 <body class="min-h-screen">
@@ -80,6 +89,26 @@
     </div>
 
   </main>
+</div>
+
+<!-- ============ MODAL PREVIEW — TAMPILAN PERSIS SEPERTI DI HALAMAN UJIAN SISWA ============ -->
+<div id="modalPreview" class="hidden fixed inset-0 pv-modal-bg flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="pv-navy text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10 rounded-t-2xl">
+      <div>
+        <h1 class="font-bold text-sm">Preview Tampilan Siswa</h1>
+        <p class="text-xs" style="color:#FEF3E2;">Ini simulasi persis — bukan soal sungguhan yang tersimpan</p>
+      </div>
+      <button onclick="tutupPreview()" class="btn" style="background:#fff2; color:#fff;">✕ Tutup</button>
+    </div>
+    <div class="p-6">
+      <p class="text-xs text-gray-500 mb-2">Soal <span id="pvNomor">1</span> · Bobot <span id="pvBobot">-</span></p>
+      <div id="pvMedia" class="mb-4"></div>
+      <p id="pvTeksSoal" class="text-base font-medium mb-5 leading-relaxed"></p>
+      <div id="pvOpsi" class="space-y-3"></div>
+      <p class="text-xs text-gray-400 mt-5">✅ Opsi dengan latar oranye = kunci jawaban yang terdeteksi (hanya tampil di preview ini, TIDAK tampil ke siswa sungguhan).</p>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -438,6 +467,7 @@ function tampilkanHasil() {
       '<div class="flex justify-between items-start mb-2">' +
         '<span class="font-bold navy-text">Soal #' + s.nomor + (!s.kunciJawaban ? ' <span class="badge-flag">kunci belum terdeteksi</span>' : '') + '</span>' +
         '<div class="flex gap-2">' +
+          '<button onclick="bukaPreview(' + idx + ')" class="btn btn-secondary" style="padding:2px 8px; font-size:12px;">👁 Preview</button> ' +
           '<button onclick="gabungKeAtas(' + idx + ')" class="btn btn-secondary" style="padding:2px 8px; font-size:12px;">↑ Gabung ke atas</button>' +
           '<button onclick="hapusBaris(' + idx + ')" class="btn btn-danger" style="padding:2px 8px; font-size:12px;">Hapus</button>' +
         '</div>' +
@@ -466,6 +496,41 @@ function tampilkanHasil() {
 function ubahField(idx, field, value) { SOAL_HASIL[idx][field] = value; }
 function pilihGambar(idx, url) { SOAL_HASIL[idx].gambarUrl = url; tampilkanHasil(); }
 function hapusBaris(idx) { SOAL_HASIL.splice(idx, 1); tampilkanHasil(); }
+
+/**
+ * Preview ini SENGAJA meniru persis logika tampilkanSoal() di
+ * siswa/ujian.html: urutan render media (gambar/audio/video), lalu
+ * teks soal, lalu opsi jawaban dengan format "A. teks" memakai kartu
+ * .opsi-jawaban yang sama. Satu-satunya perbedaan yang disengaja:
+ * kunci jawaban ditonjolkan di sini (siswa sungguhan TIDAK pernah
+ * melihat highlight ini).
+ */
+function bukaPreview(idx) {
+  const s = SOAL_HASIL[idx];
+  document.getElementById('pvNomor').textContent = s.nomor;
+  document.getElementById('pvBobot').textContent = document.getElementById('defBobot').value || 1;
+  document.getElementById('pvTeksSoal').textContent = s.soal;
+
+  const media = document.getElementById('pvMedia');
+  media.innerHTML = '';
+  if (s.gambarUrl) media.innerHTML = '<img src="' + esc(s.gambarUrl) + '" class="max-w-full rounded-lg mb-2" />';
+
+  const opsiC = document.getElementById('pvOpsi');
+  opsiC.innerHTML = '';
+  ['A', 'B', 'C', 'D'].forEach(function (h) {
+    const teks = s['opsi' + h];
+    if (!teks) return; // sama seperti siswa: opsi kosong tidak dibuat (di sistem asli, opsi kosong dari BANK_SOAL memang tidak dikirim)
+    const isKunci = s.kunciJawaban === h;
+    const div = document.createElement('div');
+    div.className = 'pv-opsi' + (isKunci ? ' pv-opsi-kunci' : '');
+    div.innerHTML = '<b>' + h + '.</b> ' + esc(teks) + (isKunci ? ' <span style="color:#B45309;">✅ kunci</span>' : '');
+    opsiC.appendChild(div);
+  });
+
+  document.getElementById('modalPreview').classList.remove('hidden');
+}
+function tutupPreview() { document.getElementById('modalPreview').classList.add('hidden'); }
+
 function gabungKeAtas(idx) {
   if (idx === 0) { alert('Ini baris pertama, tidak ada baris di atasnya.'); return; }
   const atas = SOAL_HASIL[idx - 1];
