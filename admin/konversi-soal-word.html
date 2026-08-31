@@ -321,6 +321,15 @@ function ekstrakOpsiDariTeksPolos(teks) {
   }
   const opsi = { a: '', b: '', c: '', d: '' };
   let kunciJawaban = '';
+  // Teks SEBELUM label opsi pertama (mis. daftar pernyataan "1) ... 2) ...
+  // 3) ... 4) ..." yang ditulis sebagai paragraf biasa, bukan daftar
+  // bernomor Word) dulu terbuang begitu saja karena hanya teks DI ANTARA
+  // label yang diambil. Sekarang ditangkap terpisah supaya bisa
+  // disambungkan kembali ke badan soal.
+  // Kalau tidak ada label opsi sama sekali ditemukan, seluruh teks ini
+  // adalah preamble (belum tentu terpakai di tempat lain) — jangan
+  // sampai hilang begitu saja.
+  const preamble = temuan.length ? teks.slice(0, temuan[0].labelStart) : teks;
   temuan.forEach(function (item, idx) {
     const akhir = idx + 1 < temuan.length ? temuan[idx + 1].labelStart : teks.length;
     let potongan = teks.slice(item.contentStart, akhir).trim();
@@ -328,7 +337,7 @@ function ekstrakOpsiDariTeksPolos(teks) {
     potongan = bersihkanMarker(potongan).trim();
     if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
   });
-  return { opsi: opsi, kunciJawaban: kunciJawaban, jumlahDitemukan: temuan.length };
+  return { opsi: opsi, kunciJawaban: kunciJawaban, jumlahDitemukan: temuan.length, preamble: preamble };
 }
 
 function susunSoalDariData(s) {
@@ -349,6 +358,15 @@ function susunSoalDariData(s) {
   }
 
   let teksSoal = bersihkanMarker(s.teksStem).trim();
+
+  // Pernyataan/preamble yang tertulis sebagai teks biasa sebelum label
+  // opsi pertama (mis. "Perhatikan pernyataan berikut: 1) ... 2) ...").
+  const preambleBersih = bersihkanMarker(hasilPlain.preamble || '').trim();
+  if (preambleBersih) teksSoal += ' ' + preambleBersih;
+
+  // Sub-daftar bernomor Word yang TIDAK dipakai sebagai opsi (mis. daftar
+  // pernyataan asli yang diformat sebagai list Word, bukan teks polos)
+  // disisipkan juga ke teks soal, supaya konteksnya tidak hilang.
   if (hasilPlain.jumlahDitemukan >= 2 && s.subDaftar.length) {
     const tambahan = s.subDaftar.map(function (t, i) { return (i + 1) + ') ' + bersihkanMarker(t).trim(); }).join(' ');
     if (tambahan.trim()) teksSoal += ' ' + tambahan;
