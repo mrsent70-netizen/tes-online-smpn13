@@ -156,6 +156,33 @@ function parseXml(str) {
   return new DOMParser().parseFromString(str, 'application/xml');
 }
 
+// Kalau guru membuat pangkat/indeks dengan cara mengetik angka biasa lalu
+// menekan tombol Superscript/Subscript di Word (bukan memilih karakter
+// ²/₂ langsung dari Insert Symbol), yang tersimpan di file HANYA angka
+// biasa dengan gaya tampilan saja — teksnya sendiri tetap "2", bukan "²".
+// Supaya tidak hilang/salah saat ditampilkan sebagai teks polos di
+// aplikasi ujian, di sini kita ubah jadi karakter Unicode pangkat/bawah
+// yang sungguhan berdasarkan gaya <w:vertAlign> pada run tersebut.
+const PETA_SUPERSKRIP = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾','n':'ⁿ' };
+const PETA_SUBSKRIP = { '0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','=':'₌','(':'₍',')':'₎' };
+
+function modeVertAlignRun(rEl) {
+  const rPr = rEl.getElementsByTagName('w:rPr')[0];
+  if (!rPr) return null;
+  const va = rPr.getElementsByTagName('w:vertAlign')[0];
+  if (!va) return null;
+  const val = va.getAttribute('w:val');
+  if (val === 'superscript') return 'super';
+  if (val === 'subscript') return 'sub';
+  return null;
+}
+
+function terapkanVertAlign(teks, mode) {
+  if (!mode) return teks;
+  const peta = mode === 'super' ? PETA_SUPERSKRIP : PETA_SUBSKRIP;
+  return teks.split('').map(function (ch) { return peta[ch] || ch; }).join('');
+}
+
 function getRunText(rEl) {
   // PENTING: jangan hanya ambil <w:t> — Word sering memisahkan opsi
   // berkolom (mis. "a. mistar [tab] c. Jangka sorong") dengan elemen
@@ -174,7 +201,7 @@ function getRunText(rEl) {
       hasil += ' ';
     }
   });
-  return hasil;
+  return terapkanVertAlign(hasil, modeVertAlignRun(rEl));
 }
 function isRunBold(rEl) {
   const rPr = rEl.getElementsByTagName('w:rPr')[0];
