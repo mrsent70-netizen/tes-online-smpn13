@@ -306,6 +306,16 @@ async function prosesDocxFile(file) {
     return item.imageRIds.map(function (id) { return petaUrlGambar[id]; }).filter(Boolean);
   }
 
+  // Pola nomor soal yang DIKETIK MANUAL di awal paragraf (mis. "12. Perhatikan
+  // gambar berikut!") — dipakai sebagai jalur pengenalan CADANGAN untuk
+  // dokumen yang TIDAK memakai fitur penomoran otomatis Word sama sekali
+  // (numId selalu null di seluruh dokumen). Banyak soal bergaya ini
+  // menaruh SATU SOAL UTUH (nomor + pertanyaan + semua opsi A-D) dalam
+  // SATU paragraf, dipisah dengan Enter/line-break biasa (<w:br/>), bukan
+  // paragraf terpisah — makanya deteksi berbasis <w:numId> saja tidak
+  // cukup untuk dokumen semacam ini.
+  const regexNomorSoalDiAwal = /^\s*\d+[.\)]\s+/;
+
   infoList.forEach(function (item) {
     if (item.numId !== null) {
       const isMain = petaRunPerItem.get(item);
@@ -317,6 +327,20 @@ async function prosesDocxFile(file) {
         soalAktif.subDaftar.push(item.text);
         soalAktif.gambar = soalAktif.gambar.concat(gambarDariItem(item));
       }
+      return;
+    }
+
+    const teksBersihAwal = bersihkanMarker(item.text).replace(/^[\s\u00a0]+/, '');
+    if (regexNomorSoalDiAwal.test(teksBersihAwal)) {
+      // Paragraf ini DIAWALI angka soal manual -> mulai soal baru.
+      // Teks stem akan otomatis terpisah dari opsi lewat mekanisme
+      // "preamble" di ekstrakOpsiDariTeksPolos(), jadi di sini cukup
+      // masukkan seluruh sisa teks (setelah nomor dibuang) ke
+      // teksOpsiPlain, sama seperti opsi a/b/c/d pada dokumen lain.
+      nomorCounter++;
+      const teksTanpaNomor = item.text.replace(/^[\s\u00a0]*\d+[.\)][\s\u00a0]*/, '');
+      soalAktif = { nomor: nomorCounter, teksStem: '', teksOpsiPlain: teksTanpaNomor, subDaftar: [], gambar: gambarDariItem(item) };
+      daftarSoal.push(soalAktif);
     } else if (soalAktif) {
       soalAktif.teksOpsiPlain += ' ' + item.text;
       soalAktif.gambar = soalAktif.gambar.concat(gambarDariItem(item));
