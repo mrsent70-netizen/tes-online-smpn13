@@ -294,7 +294,7 @@ async function prosesDocxFile(file) {
   // Pola nomor soal yang DIKETIK MANUAL di awal paragraf (mis. "12. Perhatikan
   // gambar berikut!") — dideklarasikan di sini (bukan di bawah) supaya bisa
   // dipakai untuk PRA-PEMERIKSAAN gaya dokumen sebelum menyusun soal.
-  const regexNomorSoalDiAwal = /^\s*\d+[.\)]\s+/;
+  const regexNomorSoalDiAwal = /^\s*(\d+)[.\)]\s+/;
 
   // Cek dulu: apakah dokumen ini memakai gaya penomoran MANUAL (diketik
   // sendiri oleh guru) di mana pun? Kalau ya, maka SEMUA daftar bernomor
@@ -347,6 +347,7 @@ async function prosesDocxFile(file) {
   const daftarSoal = [];
   let soalAktif = null;
   let nomorCounter = 0;
+  let nomorSoalManualTerakhir = null;
 
   function gambarDariItem(item) {
     return item.imageRIds.map(function (id) { return petaUrlGambar[id]; }).filter(Boolean);
@@ -377,13 +378,20 @@ async function prosesDocxFile(file) {
     }
 
     const teksBersihAwal = bersihkanMarker(item.text).replace(/^[\s\u00a0]+/, '');
-    if (regexNomorSoalDiAwal.test(teksBersihAwal)) {
-      // Paragraf ini DIAWALI angka soal manual -> mulai soal baru.
-      // Teks stem akan otomatis terpisah dari opsi lewat mekanisme
-      // "preamble" di ekstrakOpsiDariTeksPolos(), jadi di sini cukup
-      // masukkan seluruh sisa teks (setelah nomor dibuang) ke
-      // teksOpsiPlain, sama seperti opsi a/b/c/d pada dokumen lain.
+    const cocokNomor = teksBersihAwal.match(regexNomorSoalDiAwal);
+    // PENTING: nomor soal baru HANYA diterima kalau angkanya lebih besar
+    // dari nomor soal sebelumnya (urutan soal memang harus naik terus:
+    // 8, 9, 10, ...). Ini membedakan nomor SOAL sungguhan dari nomor
+    // PERNYATAAN di dalam soal (mis. "Perhatikan pernyataan berikut: 1.
+    // Ikan 2. Cahaya matahari ... 6. Batu") yang juga diketik manual
+    // dengan pola sama tapi RESET dari 1 lagi — kalau tidak divalidasi,
+    // tiap pernyataan itu keliru dianggap soal baru sendiri-sendiri.
+    const angkaDitemukan = cocokNomor ? Number(cocokNomor[1]) : null;
+    const angkaValid = angkaDitemukan !== null && (nomorSoalManualTerakhir === null || angkaDitemukan > nomorSoalManualTerakhir);
+
+    if (angkaValid) {
       nomorCounter++;
+      nomorSoalManualTerakhir = angkaDitemukan;
       const teksTanpaNomor = item.text.replace(/^[\s\u00a0]*\d+[.\)][\s\u00a0]*/, '');
       soalAktif = { nomor: nomorCounter, teksStem: '', teksOpsiPlain: teksTanpaNomor, subDaftar: [], gambar: gambarDariItem(item) };
       daftarSoal.push(soalAktif);
