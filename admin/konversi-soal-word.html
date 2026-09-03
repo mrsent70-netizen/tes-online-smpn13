@@ -425,16 +425,41 @@ function susunSoalDariData(s) {
   let kunciJawaban = '';
 
   const hasilPlain = ekstrakOpsiDariTeksPolos(s.teksOpsiPlain);
+  // Sub-daftar bernomor Word yang TIDAK dipakai sebagai pernyataan biasa
+  // (mis. "1) Ikan 2) Cahaya matahari...") akan digabung ke stem;
+  // sisanya (kalau ada, di bagian EKOR daftar) dipakai sebagai opsi A-D.
+  let subDaftarUntukStem = s.subDaftar;
+
   if (hasilPlain.jumlahDitemukan >= 2) {
     opsi = hasilPlain.opsi;
     kunciJawaban = hasilPlain.kunciJawaban;
-  } else if (s.subDaftar.length >= 2 && s.subDaftar.length <= 5) {
-    const huruf = ['a', 'b', 'c', 'd', 'e'];
-    s.subDaftar.forEach(function (teksItem, idx) {
-      if (idx >= huruf.length) return;
-      if (teksItem.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = huruf[idx].toUpperCase();
-      opsi[huruf[idx]] = bersihkanMarker(teksItem).trim();
-    });
+  } else if (s.subDaftar.length >= 2) {
+    // PENTING: satu soal bisa punya PERNYATAAN (mis. "Ikan", "Udara" —
+    // 6 item) SEKALIGUS OPSI JAWABAN (mis. "1,4 dan 5" — 4 item) yang
+    // semuanya masuk sub-daftar yang sama (total bisa >5 item), jadi
+    // tidak bisa langsung dianggap "semua sub-daftar = opsi" begitu saja.
+    // Cara membedakannya: opsi jawaban BIASANYA jadi beberapa item
+    // TERAKHIR dalam daftar dan teksnya relatif PENDEK (jarang lebih
+    // dari ~70 karakter), sedangkan pernyataan/pengantar ada di
+    // bagian AWAL. Jadi ambil beberapa item pendek terakhir (maks 5)
+    // sebagai kandidat opsi, sisanya di awal tetap jadi bagian soal.
+    const AMBANG_PANJANG_OPSI = 70;
+    const kandidatOpsi = [];
+    let batas = s.subDaftar.length;
+    while (batas > 0 && kandidatOpsi.length < 5) {
+      const teksItem = bersihkanMarker(s.subDaftar[batas - 1]).trim();
+      if (teksItem.length > AMBANG_PANJANG_OPSI) break;
+      kandidatOpsi.unshift(s.subDaftar[batas - 1]);
+      batas--;
+    }
+    if (kandidatOpsi.length >= 2) {
+      const huruf = ['a', 'b', 'c', 'd', 'e'];
+      kandidatOpsi.forEach(function (teksItem, idx) {
+        if (teksItem.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = huruf[idx].toUpperCase();
+        opsi[huruf[idx]] = bersihkanMarker(teksItem).trim();
+      });
+      subDaftarUntukStem = s.subDaftar.slice(0, batas);
+    }
   }
 
   let teksSoal = bersihkanMarker(s.teksStem).trim();
@@ -444,11 +469,12 @@ function susunSoalDariData(s) {
   const preambleBersih = bersihkanMarker(hasilPlain.preamble || '').trim();
   if (preambleBersih) teksSoal += ' ' + preambleBersih;
 
-  // Sub-daftar bernomor Word yang TIDAK dipakai sebagai opsi (mis. daftar
-  // pernyataan asli yang diformat sebagai list Word, bukan teks polos)
-  // disisipkan juga ke teks soal, supaya konteksnya tidak hilang.
-  if (hasilPlain.jumlahDitemukan >= 2 && s.subDaftar.length) {
-    const tambahan = s.subDaftar.map(function (t, i) { return (i + 1) + ') ' + bersihkanMarker(t).trim(); }).join(' ');
+  // Sisa sub-daftar yang TIDAK dipakai sebagai opsi (pernyataan/pengantar
+  // di bagian awal daftar) disisipkan ke teks soal, supaya konteksnya
+  // tidak hilang — baik saat opsi ditemukan lewat teks polos "a.b.c.d."
+  // MAUPUN lewat kandidat-opsi dari ekor sub-daftar di atas.
+  if (subDaftarUntukStem.length) {
+    const tambahan = subDaftarUntukStem.map(function (t, i) { return (i + 1) + ') ' + bersihkanMarker(t).trim(); }).join(' ');
     if (tambahan.trim()) teksSoal += ' ' + tambahan;
   }
 
