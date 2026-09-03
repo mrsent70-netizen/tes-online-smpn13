@@ -446,7 +446,11 @@ function susunSoalDariData(s) {
     const AMBANG_PANJANG_OPSI = 70;
     const kandidatOpsi = [];
     let batas = s.subDaftar.length;
-    while (batas > 0 && kandidatOpsi.length < 5) {
+    // Batas maksimal 4 (bukan 5) SENGAJA dipilih: soal pilihan ganda
+    // Indonesia hampir selalu A-D, jarang sampai E. Kalau dibatasi 5,
+    // pernyataan terakhir yang kebetulan pendek (mis. "Batu") bisa ikut
+    // tertarik masuk jadi opsi kelima yang salah.
+    while (batas > 0 && kandidatOpsi.length < 4) {
       const teksItem = bersihkanMarker(s.subDaftar[batas - 1]).trim();
       if (teksItem.length > AMBANG_PANJANG_OPSI) break;
       kandidatOpsi.unshift(s.subDaftar[batas - 1]);
