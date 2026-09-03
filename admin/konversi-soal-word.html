@@ -218,9 +218,12 @@ function getRunImageRIds(rEl) {
 function parseParagraph(pEl) {
   const numPr = pEl.getElementsByTagName('w:numPr')[0];
   let numId = null;
+  let ilvl = 0;
   if (numPr) {
     const numIdEl = numPr.getElementsByTagName('w:numId')[0];
     if (numIdEl) numId = numIdEl.getAttribute('w:val');
+    const ilvlEl = numPr.getElementsByTagName('w:ilvl')[0];
+    if (ilvlEl) ilvl = Number(ilvlEl.getAttribute('w:val'));
   }
   let markedText = '';
   const imageRIds = [];
@@ -233,46 +236,7 @@ function parseParagraph(pEl) {
     if (t) markedText += isRunBold(r) ? (PENANDA_BOLD_MULAI + t + PENANDA_BOLD_SELESAI) : t;
     imageRIds.push.apply(imageRIds, getRunImageRIds(r));
   });
-  return { numId: numId, text: markedText, imageRIds: imageRIds };
-}
-
-/**
- * Inti algoritma: membedakan "soal bernomor baru" dari "sub-daftar"
- * (pernyataan/opsi yang juga diberi format daftar bernomor oleh Word,
- * BUKAN soal baru). Aturannya: sekali sebuah numId ditetapkan sebagai
- * "penomoran soal utama", setiap paragraf lain dengan numId BERBEDA
- * yang nanti KEMBALI ke numId utama tersebut dianggap sub-daftar
- * (disisipkan di tengah); kalau tidak pernah kembali, numId baru itu
- * dianggap kelanjutan penomoran utama (Word kadang mengganti nomor
- * urut list di tengah dokumen karena alasan format internal).
- */
-function klasifikasikanRuns(infoList) {
-  const runs = [];
-  let current = null;
-  infoList.forEach(function (item) {
-    if (item.numId === null) { current = null; return; }
-    if (current && current.numId === item.numId) { current.items.push(item); }
-    else { current = { numId: item.numId, items: [item], isMain: false }; runs.push(current); }
-  });
-  if (!runs.length) return runs;
-
-  let mainNumId = runs[0].numId;
-  runs[0].isMain = true;
-  let i = 1;
-  while (i < runs.length) {
-    const r = runs[i];
-    if (r.numId === mainNumId) { r.isMain = true; i++; continue; }
-    let j = i;
-    while (j < runs.length && runs[j].numId !== mainNumId) j++;
-    if (j < runs.length) {
-      i = j;
-    } else {
-      mainNumId = r.numId;
-      r.isMain = true;
-      i++;
-    }
-  }
-  return runs;
+  return { numId: numId, ilvl: ilvl, text: markedText, imageRIds: imageRIds };
 }
 
 async function prosesDocxFile(file) {
@@ -296,25 +260,10 @@ async function prosesDocxFile(file) {
   // dipakai untuk PRA-PEMERIKSAAN gaya dokumen sebelum menyusun soal.
   const regexNomorSoalDiAwal = /^\s*(\d+)[.\)]\s+/;
 
-  // Cek dulu: apakah dokumen ini memakai gaya penomoran MANUAL (diketik
-  // sendiri oleh guru) di mana pun? Kalau ya, maka SEMUA daftar bernomor
-  // otomatis Word yang ditemukan (di mana pun posisinya) HARUS dianggap
-  // sebagai bagian dari soal yang sedang berjalan (opsi jawaban atau
-  // pernyataan), TIDAK PERNAH sebagai soal baru — supaya daftar otomatis
-  // Word yang KEBETULAN dipakai HANYA untuk opsi jawaban satu soal saja
-  // (bukan untuk seluruh penomoran soal) tidak keliru dianggap sebagai
-  // "penomoran soal utama" hanya karena dia daftar-otomatis-Word PERTAMA
-  // yang ditemukan di dokumen.
-  const adaNomorManual = infoList.some(function (item) {
-    const bersih = bersihkanMarker(item.text).replace(/^[\s\u00a0]+/, '');
-    return regexNomorSoalDiAwal.test(bersih);
-  });
-
-  const runs = adaNomorManual ? [] : klasifikasikanRuns(infoList);
-  const petaRunPerItem = new Map();
-  runs.forEach(function (run) {
-    run.items.forEach(function (item) { petaRunPerItem.set(item, run.isMain); });
-  });
+  // Pola nomor soal yang DIKETIK MANUAL di awal paragraf (mis. "12. Perhatikan
+  // gambar berikut!") — dideklarasikan di sini (bukan di bawah) supaya bisa
+  // dipakai untuk PRA-PEMERIKSAAN gaya dokumen sebelum menyusun soal.
+  const regexNomorSoalDiAwal = /^\s*(\d+)[.\)]\s+/;
 
   const semuaRIds = new Set();
   infoList.forEach(function (item) { item.imageRIds.forEach(function (id) { semuaRIds.add(id); }); });
@@ -352,19 +301,48 @@ async function prosesDocxFile(file) {
     return item.imageRIds.map(function (id) { return petaUrlGambar[id]; }).filter(Boolean);
   }
 
-  // Pola nomor soal yang DIKETIK MANUAL di awal paragraf (mis. "12. Perhatikan
-  // gambar berikut!") — dipakai sebagai jalur pengenalan CADANGAN untuk
-  // dokumen yang TIDAK memakai fitur penomoran otomatis Word sama sekali
-  // (numId selalu null di seluruh dokumen). Banyak soal bergaya ini
-  // menaruh SATU SOAL UTUH (nomor + pertanyaan + semua opsi A-D) dalam
-  // SATU paragraf, dipisah dengan Enter/line-break biasa (<w:br/>), bukan
-  // paragraf terpisah — makanya deteksi berbasis <w:numId> saja tidak
-  // cukup untuk dokumen semacam ini. (Pola regex-nya sudah dideklarasikan
-  // di atas untuk pra-pemeriksaan gaya dokumen, dipakai lagi di sini.)
+  // ---- Klasifikasi soal-utama vs sub-daftar untuk paragraf berpenomoran
+  // otomatis Word — MEMAKAI DUA SINYAL SEKALIGUS, karena satu sinyal saja
+  // TIDAK CUKUP (sudah diuji langsung):
+  // 1) <w:numId> harus melanjutkan urutan penomoran soal UTAMA (dideteksi
+  //    lewat "apakah numId ini nanti kembali lagi ke numId utama" — kalau
+  //    ya, berarti dia cuma sisipan sub-daftar sementara).
+  // 2) <w:ilvl> (level indentasi) HARUS 0 (level teratas) — karena ada
+  //    dokumen di mana soal, pernyataan, DAN opsi jawaban semuanya
+  //    memakai numId yang SAMA PERSIS (tidak ada pembeda dari numId saja),
+  //    tapi levelnya beda: soal selalu di ilvl 0, sedangkan pernyataan/
+  //    opsi selalu di ilvl 1 ke atas.
+  // Kedua syarat ini harus TERPENUHI SEKALIGUS baru dianggap soal baru.
+  const runsNumId = [];
+  {
+    let current = null;
+    infoList.forEach(function (item) {
+      if (item.numId === null) { current = null; return; }
+      if (current && current.numId === item.numId) { current.items.push(item); }
+      else { current = { numId: item.numId, items: [item], isMain: false }; runsNumId.push(current); }
+    });
+  }
+  if (runsNumId.length) {
+    let mainNumId = runsNumId[0].numId;
+    runsNumId[0].isMain = true;
+    let i = 1;
+    while (i < runsNumId.length) {
+      const r = runsNumId[i];
+      if (r.numId === mainNumId) { r.isMain = true; i++; continue; }
+      let j = i;
+      while (j < runsNumId.length && runsNumId[j].numId !== mainNumId) j++;
+      if (j < runsNumId.length) { i = j; }
+      else { mainNumId = r.numId; r.isMain = true; i++; }
+    }
+  }
+  const petaRunUtama = new Map();
+  runsNumId.forEach(function (run) {
+    run.items.forEach(function (item) { petaRunUtama.set(item, run.isMain); });
+  });
 
   infoList.forEach(function (item) {
     if (item.numId !== null) {
-      const isMain = petaRunPerItem.get(item);
+      const isMain = petaRunUtama.get(item) && item.ilvl === 0;
       if (isMain) {
         nomorCounter++;
         soalAktif = { nomor: nomorCounter, teksStem: item.text, teksOpsiPlain: '', subDaftar: [], gambar: gambarDariItem(item) };
