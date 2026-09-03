@@ -260,11 +260,6 @@ async function prosesDocxFile(file) {
   // dipakai untuk PRA-PEMERIKSAAN gaya dokumen sebelum menyusun soal.
   const regexNomorSoalDiAwal = /^\s*(\d+)[.\)]\s+/;
 
-  // Pola nomor soal yang DIKETIK MANUAL di awal paragraf (mis. "12. Perhatikan
-  // gambar berikut!") — dideklarasikan di sini (bukan di bawah) supaya bisa
-  // dipakai untuk PRA-PEMERIKSAAN gaya dokumen sebelum menyusun soal.
-  const regexNomorSoalDiAwal = /^\s*(\d+)[.\)]\s+/;
-
   const semuaRIds = new Set();
   infoList.forEach(function (item) { item.imageRIds.forEach(function (id) { semuaRIds.add(id); }); });
 
