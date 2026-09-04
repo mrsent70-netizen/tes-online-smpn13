@@ -1,4 +1,3 @@
-<!-- PERBAIKAN: parser kunci jawaban mendukung bold yang membungkus label A/B/C/D -->
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -389,60 +388,37 @@ function bersihkanMarker(teks) {
  * (kasus jawaban benar yang huruf labelnya ikut di-bold).
  */
 function ekstrakOpsiDariTeksPolos(teks) {
-      const opsi = [];
-      let kunciJawaban = null;
-
-      /*
-       * PERBAIKAN:
-       * Word dapat memberi format bold pada seluruh opsi, termasuk label
-       * A./B./C./D. Parser lama hanya mengenali marker bold setelah label.
-       * Parser ini menerima marker bold sebelum maupun sesudah label.
-       */
-      const marker = '[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + ']*';
-
-      const regexLabel = new RegExp(
-        '(^|[^a-zA-Z0-9])' +
-        marker +
-        '([a-dA-D])' +
-        marker +
-        '\\s*[.\\)]\\s*',
-        'g'
-      );
-
-      const kecocokan = [];
-      let m;
-
-      while ((m = regexLabel.exec(teks)) !== null) {
-        const fullMatch = m[0];
-        kecocokan.push({
-          huruf: m[2].toUpperCase(),
-          index: m.index,
-          end: regexLabel.lastIndex,
-          boldPadaLabel: fullMatch.indexOf(PENANDA_BOLD_MULAI) > -1
-        });
-      }
-
-      for (let i = 0; i < kecocokan.length; i++) {
-        const item = kecocokan[i];
-        const akhir = i + 1 < kecocokan.length ? kecocokan[i + 1].index : teks.length;
-        const potongan = teks.slice(item.end, akhir).trim();
-
-        if (!potongan) continue;
-
-        const boldPadaIsi = potongan.indexOf(PENANDA_BOLD_MULAI) > -1;
-
-        if (item.boldPadaLabel || boldPadaIsi) {
-          kunciJawaban = item.huruf;
-        }
-
-        opsi.push({
-          huruf: item.huruf,
-          teks: bersihkanMarker(potongan)
-        });
-      }
-
-      return { opsi, kunciJawaban };
-    }
+  // Karena penanda bold sekarang 1 karakter kontrol (bukan token
+  // banyak-karakter), dia otomatis lolos syarat "(?:^|[^a-zA-Z0-9])"
+  // sebagai anchor, dan grup toleransi di bawah cukup menyapu berapa
+  // pun penanda yang menempel setelah huruf label — tidak ada lagi
+  // risiko "termakan sebagian" seperti token multi-karakter dulu.
+  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + '])*\\s*[.\\)]\\s*', 'g');
+  const temuan = [];
+  let m;
+  while ((m = regexLabel.exec(teks)) !== null) {
+    temuan.push({ huruf: m[1].toLowerCase(), labelStart: m.index, contentStart: m.index + m[0].length });
+  }
+  const opsi = { a: '', b: '', c: '', d: '' };
+  let kunciJawaban = '';
+  // Teks SEBELUM label opsi pertama (mis. daftar pernyataan "1) ... 2) ...
+  // 3) ... 4) ..." yang ditulis sebagai paragraf biasa, bukan daftar
+  // bernomor Word) dulu terbuang begitu saja karena hanya teks DI ANTARA
+  // label yang diambil. Sekarang ditangkap terpisah supaya bisa
+  // disambungkan kembali ke badan soal.
+  // Kalau tidak ada label opsi sama sekali ditemukan, seluruh teks ini
+  // adalah preamble (belum tentu terpakai di tempat lain) — jangan
+  // sampai hilang begitu saja.
+  const preamble = temuan.length ? teks.slice(0, temuan[0].labelStart) : teks;
+  temuan.forEach(function (item, idx) {
+    const akhir = idx + 1 < temuan.length ? temuan[idx + 1].labelStart : teks.length;
+    let potongan = teks.slice(item.contentStart, akhir).trim();
+    if (potongan.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = item.huruf.toUpperCase();
+    potongan = bersihkanMarker(potongan).trim();
+    if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
+  });
+  return { opsi: opsi, kunciJawaban: kunciJawaban, jumlahDitemukan: temuan.length, preamble: preamble };
+}
 
 function susunSoalDariData(s) {
   let opsi = { a: '', b: '', c: '', d: '' };
