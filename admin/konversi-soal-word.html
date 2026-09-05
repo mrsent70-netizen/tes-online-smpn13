@@ -413,7 +413,13 @@ function ekstrakOpsiDariTeksPolos(teks) {
   temuan.forEach(function (item, idx) {
     const akhir = idx + 1 < temuan.length ? temuan[idx + 1].labelStart : teks.length;
     let potongan = teks.slice(item.contentStart, akhir).trim();
-    if (potongan.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = item.huruf.toUpperCase();
+    // Cek KEDUA penanda (pembuka \u0001 MAUPUN penutup \u0002), bukan
+    // cuma pembuka saja — karena kalau satu opsi utuh ("A. Pertumbuhan")
+    // di-bold sekaligus dalam SATU blok, penanda pembukanya ikut
+    // "termakan" oleh regex pendeteksi huruf label di atas (dianggap
+    // sebagai anchor sebelum huruf A/B/C/D), sehingga yang tersisa di
+    // potongan konten HANYA penanda penutupnya saja.
+    if (potongan.indexOf(PENANDA_BOLD_MULAI) > -1 || potongan.indexOf(PENANDA_BOLD_SELESAI) > -1) kunciJawaban = item.huruf.toUpperCase();
     potongan = bersihkanMarker(potongan).trim();
     if (!opsi[item.huruf]) opsi[item.huruf] = potongan;
   });
@@ -459,7 +465,7 @@ function susunSoalDariData(s) {
     if (kandidatOpsi.length >= 2) {
       const huruf = ['a', 'b', 'c', 'd', 'e'];
       kandidatOpsi.forEach(function (teksItem, idx) {
-        if (teksItem.indexOf(PENANDA_BOLD_MULAI) > -1) kunciJawaban = huruf[idx].toUpperCase();
+        if (teksItem.indexOf(PENANDA_BOLD_MULAI) > -1 || teksItem.indexOf(PENANDA_BOLD_SELESAI) > -1) kunciJawaban = huruf[idx].toUpperCase();
         opsi[huruf[idx]] = bersihkanMarker(teksItem).trim();
       });
       subDaftarUntukStem = s.subDaftar.slice(0, batas);
