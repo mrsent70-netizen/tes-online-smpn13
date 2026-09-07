@@ -151,6 +151,15 @@ function esc(str) {
 // (tidak akan pernah muncul dalam teks soal sungguhan).
 const PENANDA_BOLD_MULAI = '\u0001';
 const PENANDA_BOLD_SELESAI = '\u0002';
+// Penanda garis bawah — BEDA dari bold: bold cuma dipakai untuk MENANDAI
+// kunci jawaban secara internal lalu dibuang (tidak pernah ditampilkan
+// ke siswa, supaya tidak membocorkan jawaban benar). Garis bawah
+// sebaliknya adalah bagian ISI SOAL yang sungguhan (mis. menegaskan
+// kata tertentu, atau menandai kata-kata yang perlu diberi nomor urut)
+// dan HARUS tetap tampil ke siswa — makanya nanti dikonversi jadi tag
+// <u> sungguhan di keluaran akhir, bukan dibuang seperti bold.
+const PENANDA_GARISBAWAH_MULAI = '\u0005';
+const PENANDA_GARISBAWAH_SELESAI = '\u0006';
 
 function parseXml(str) {
   return new DOMParser().parseFromString(str, 'application/xml');
@@ -183,6 +192,17 @@ function terapkanVertAlign(teks, mode) {
   return teks.split('').map(function (ch) { return peta[ch] || ch; }).join('');
 }
 
+function isRunUnderline(rEl) {
+  const rPr = rEl.getElementsByTagName('w:rPr')[0];
+  if (!rPr) return false;
+  const u = rPr.getElementsByTagName('w:u')[0];
+  if (!u) return false;
+  const val = u.getAttribute('w:val');
+  // "none" berarti garis bawah SENGAJA dimatikan (mis. mewarisi gaya
+  // lain yang biasanya underline) — jangan dianggap bergaris bawah.
+  return val !== 'none';
+}
+
 function getRunText(rEl) {
   // PENTING: jangan hanya ambil <w:t> — Word sering memisahkan opsi
   // berkolom (mis. "a. mistar [tab] c. Jangka sorong") dengan elemen
@@ -201,7 +221,11 @@ function getRunText(rEl) {
       hasil += ' ';
     }
   });
-  return terapkanVertAlign(hasil, modeVertAlignRun(rEl));
+  hasil = terapkanVertAlign(hasil, modeVertAlignRun(rEl));
+  if (isRunUnderline(rEl) && hasil) {
+    hasil = PENANDA_GARISBAWAH_MULAI + hasil + PENANDA_GARISBAWAH_SELESAI;
+  }
+  return hasil;
 }
 function isRunBold(rEl) {
   const rPr = rEl.getElementsByTagName('w:rPr')[0];
@@ -378,7 +402,15 @@ async function prosesDocxFile(file) {
 }
 
 function bersihkanMarker(teks) {
-  return teks.split(PENANDA_BOLD_MULAI).join('').split(PENANDA_BOLD_SELESAI).join('');
+  // Penanda BOLD dihapus tanpa bekas (cukup dipakai untuk deteksi kunci
+  // jawaban, tidak perlu tampil). Penanda GARIS BAWAH diubah jadi
+  // underscore asli ("_kata_"), supaya penekanannya tetap terlihat di
+  // aplikasi ujian (yang menampilkan teks polos, bukan HTML berformat).
+  return teks
+    .split(PENANDA_BOLD_MULAI).join('')
+    .split(PENANDA_BOLD_SELESAI).join('')
+    .split(PENANDA_GARISBAWAH_MULAI).join('_')
+    .split(PENANDA_GARISBAWAH_SELESAI).join('_');
 }
 
 /**
@@ -393,7 +425,7 @@ function ekstrakOpsiDariTeksPolos(teks) {
   // sebagai anchor, dan grup toleransi di bawah cukup menyapu berapa
   // pun penanda yang menempel setelah huruf label — tidak ada lagi
   // risiko "termakan sebagian" seperti token multi-karakter dulu.
-  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + '])*\\s*[.\\)]\\s*', 'g');
+  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + PENANDA_GARISBAWAH_MULAI + PENANDA_GARISBAWAH_SELESAI + '])*\\s*[.\\)]\\s*', 'g');
   const temuan = [];
   let m;
   while ((m = regexLabel.exec(teks)) !== null) {
