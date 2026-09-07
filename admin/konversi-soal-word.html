@@ -158,8 +158,17 @@ const PENANDA_BOLD_SELESAI = '\u0002';
 // kata tertentu, atau menandai kata-kata yang perlu diberi nomor urut)
 // dan HARUS tetap tampil ke siswa — makanya nanti dikonversi jadi tag
 // <u> sungguhan di keluaran akhir, bukan dibuang seperti bold.
-const PENANDA_GARISBAWAH_MULAI = '\u0005';
-const PENANDA_GARISBAWAH_SELESAI = '\u0006';
+// Untuk garis bawah, TIDAK dipakai sistem penanda seperti bold (yang
+// perlu dibersihkan belakangan) — sebagai gantinya, teks yang bergaris
+// bawah langsung diubah di tempat memakai karakter Unicode "Combining
+// Low Line" (U+0332) yang disisipkan setelah TIAP huruf. Ini membuat
+// garis SUNGGUHAN menyambung persis di bawah setiap huruf (seperti
+// garis bawah asli), BUKAN sekadar menambah simbol underscore di awal
+// dan akhir kata saja (yang keliatan seperti "_kata_", bukan garis
+// yang menyambung).
+function terapkanGarisBawah(teks) {
+  return teks.split('').map(function (ch) { return ch + '\u0332'; }).join('');
+}
 
 function parseXml(str) {
   return new DOMParser().parseFromString(str, 'application/xml');
@@ -223,7 +232,7 @@ function getRunText(rEl) {
   });
   hasil = terapkanVertAlign(hasil, modeVertAlignRun(rEl));
   if (isRunUnderline(rEl) && hasil) {
-    hasil = PENANDA_GARISBAWAH_MULAI + hasil + PENANDA_GARISBAWAH_SELESAI;
+    hasil = terapkanGarisBawah(hasil);
   }
   return hasil;
 }
@@ -403,14 +412,13 @@ async function prosesDocxFile(file) {
 
 function bersihkanMarker(teks) {
   // Penanda BOLD dihapus tanpa bekas (cukup dipakai untuk deteksi kunci
-  // jawaban, tidak perlu tampil). Penanda GARIS BAWAH diubah jadi
-  // underscore asli ("_kata_"), supaya penekanannya tetap terlihat di
-  // aplikasi ujian (yang menampilkan teks polos, bukan HTML berformat).
+  // jawaban, tidak perlu tampil). Garis bawah TIDAK memakai sistem
+  // penanda seperti ini — sudah langsung diubah jadi karakter Unicode
+  // Combining Low Line di getRunText(), jadi tidak perlu dibersihkan
+  // di sini.
   return teks
     .split(PENANDA_BOLD_MULAI).join('')
-    .split(PENANDA_BOLD_SELESAI).join('')
-    .split(PENANDA_GARISBAWAH_MULAI).join('_')
-    .split(PENANDA_GARISBAWAH_SELESAI).join('_');
+    .split(PENANDA_BOLD_SELESAI).join('');
 }
 
 /**
@@ -425,7 +433,7 @@ function ekstrakOpsiDariTeksPolos(teks) {
   // sebagai anchor, dan grup toleransi di bawah cukup menyapu berapa
   // pun penanda yang menempel setelah huruf label — tidak ada lagi
   // risiko "termakan sebagian" seperti token multi-karakter dulu.
-  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + PENANDA_GARISBAWAH_MULAI + PENANDA_GARISBAWAH_SELESAI + '])*\\s*[.\\)]\\s*', 'g');
+  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + '\\u0332])*\\s*[.\\)]\\s*', 'g');
   const temuan = [];
   let m;
   while ((m = regexLabel.exec(teks)) !== null) {
