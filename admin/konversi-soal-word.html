@@ -156,18 +156,25 @@ const PENANDA_BOLD_SELESAI = '\u0002';
 // ke siswa, supaya tidak membocorkan jawaban benar). Garis bawah
 // sebaliknya adalah bagian ISI SOAL yang sungguhan (mis. menegaskan
 // kata tertentu, atau menandai kata-kata yang perlu diberi nomor urut)
-// dan HARUS tetap tampil ke siswa — makanya nanti dikonversi jadi tag
-// <u> sungguhan di keluaran akhir, bukan dibuang seperti bold.
-// Untuk garis bawah, TIDAK dipakai sistem penanda seperti bold (yang
-// perlu dibersihkan belakangan) — sebagai gantinya, teks yang bergaris
-// bawah langsung diubah di tempat memakai karakter Unicode "Combining
-// Low Line" (U+0332) yang disisipkan setelah TIAP huruf. Ini membuat
-// garis SUNGGUHAN menyambung persis di bawah setiap huruf (seperti
-// garis bawah asli), BUKAN sekadar menambah simbol underscore di awal
-// dan akhir kata saja (yang keliatan seperti "_kata_", bukan garis
-// yang menyambung).
+// dan HARUS tetap tampil ke siswa.
+//
+// Dipakai penanda teks biasa "[u]...[/u]" (gaya BBCode) — BUKAN
+// karakter tak-terlihat, dan BUKAN karakter Unicode garis-bawah-gandeng
+// (sempat dicoba, tapi terbukti bisa terlihat putus-putus di beberapa
+// font/browser). Penanda [u][/u] ini SENGAJA dibiarkan apa adanya
+// sampai tersimpan ke Bank Soal (gampang dibaca/diedit manual di tabel
+// review), lalu diterjemahkan jadi tag <u> HTML SUNGGUHAN oleh halaman
+// ujian siswa (siswa/ujian.html) saat ditampilkan — garis bawahnya jadi
+// benar-benar menyambung sempurna, bukan sekadar simulasi pakai
+// karakter teks.
 function terapkanGarisBawah(teks) {
-  return teks.split('').map(function (ch) { return ch + '\u0332'; }).join('');
+  // SENGAJA pakai notasi bracket "[u]...[/u]" (bukan tag HTML <u> asli)
+  // untuk data yang TERSIMPAN — supaya aman kalau ada tampilan lain
+  // (mis. tabel Kelola Bank Soal di admin) yang menampilkan teks soal
+  // apa adanya tanpa merender HTML; taginya baru diubah jadi <u> asli
+  // saat DITAMPILKAN saja (lihat renderTeksDenganFormat() di alat ini,
+  // dan fungsi sejenis di siswa/ujian.html).
+  return '[u]' + teks + '[/u]';
 }
 
 function parseXml(str) {
@@ -412,10 +419,11 @@ async function prosesDocxFile(file) {
 
 function bersihkanMarker(teks) {
   // Penanda BOLD dihapus tanpa bekas (cukup dipakai untuk deteksi kunci
-  // jawaban, tidak perlu tampil). Garis bawah TIDAK memakai sistem
-  // penanda seperti ini — sudah langsung diubah jadi karakter Unicode
-  // Combining Low Line di getRunText(), jadi tidak perlu dibersihkan
-  // di sini.
+  // jawaban, tidak perlu tampil). Penanda garis bawah [u]...[/u] SENGAJA
+  // TIDAK dihapus di sini — biarkan ikut tersimpan apa adanya ke Bank
+  // Soal, supaya nanti diubah jadi tag <u> HTML asli oleh
+  // siswa/ujian.html (dan oleh renderTeksDenganFormat() di alat ini
+  // untuk Preview) tepat sebelum ditampilkan.
   return teks
     .split(PENANDA_BOLD_MULAI).join('')
     .split(PENANDA_BOLD_SELESAI).join('');
@@ -433,7 +441,7 @@ function ekstrakOpsiDariTeksPolos(teks) {
   // sebagai anchor, dan grup toleransi di bawah cukup menyapu berapa
   // pun penanda yang menempel setelah huruf label — tidak ada lagi
   // risiko "termakan sebagian" seperti token multi-karakter dulu.
-  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + '\\u0332])*\\s*[.\\)]\\s*', 'g');
+  const regexLabel = new RegExp('(?:^|[^a-zA-Z0-9])([a-dA-D])(?:[' + PENANDA_BOLD_MULAI + PENANDA_BOLD_SELESAI + '\\[\\]u/])*\\s*[.\\)]\\s*', 'g');
   const temuan = [];
   let m;
   while ((m = regexLabel.exec(teks)) !== null) {
@@ -632,11 +640,22 @@ function hapusBaris(idx) { SOAL_HASIL.splice(idx, 1); tampilkanHasil(); }
  * kunci jawaban ditonjolkan di sini (siswa sungguhan TIDAK pernah
  * melihat highlight ini).
  */
+/**
+ * Mengubah teks yang mengandung penanda [u]...[/u] menjadi HTML dengan
+ * tag <u> asli, dengan tetap meng-escape karakter HTML lain terlebih
+ * dulu supaya aman (bukan celah suntik HTML). Dipakai di sini SAMA
+ * PERSIS seperti yang akan dilakukan siswa/ujian.html, supaya Preview
+ * ini benar-benar identik dengan yang nanti dilihat siswa.
+ */
+function renderTeksDenganFormat(teks) {
+  return esc(teks).split('[u]').join('<u>').split('[/u]').join('</u>');
+}
+
 function bukaPreview(idx) {
   const s = SOAL_HASIL[idx];
   document.getElementById('pvNomor').textContent = s.nomor;
   document.getElementById('pvBobot').textContent = document.getElementById('defBobot').value || 1;
-  document.getElementById('pvTeksSoal').textContent = s.soal;
+  document.getElementById('pvTeksSoal').innerHTML = renderTeksDenganFormat(s.soal);
 
   const media = document.getElementById('pvMedia');
   media.innerHTML = '';
@@ -650,7 +669,7 @@ function bukaPreview(idx) {
     const isKunci = s.kunciJawaban === h;
     const div = document.createElement('div');
     div.className = 'pv-opsi' + (isKunci ? ' pv-opsi-kunci' : '');
-    div.innerHTML = '<b>' + h + '.</b> ' + esc(teks) + (isKunci ? ' <span style="color:#B45309;">✅ kunci</span>' : '');
+    div.innerHTML = '<b>' + h + '.</b> ' + renderTeksDenganFormat(teks) + (isKunci ? ' <span style="color:#B45309;">✅ kunci</span>' : '');
     opsiC.appendChild(div);
   });
 
