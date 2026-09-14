@@ -282,7 +282,7 @@ function tampilkanSoal(i) {
 
   document.getElementById('nomorSekarang').textContent = s.nomorTampil;
   document.getElementById('bobotSekarang').textContent = s.bobot;
-  document.getElementById('teksSoal').textContent = s.soal;
+  document.getElementById('teksSoal').innerHTML = renderTeksDenganFormat(s.soal);
 
   const media = document.getElementById('mediaContainer');
   media.innerHTML = '';
@@ -297,7 +297,7 @@ function tampilkanSoal(i) {
     s.opsi.forEach(function (o) {
       const div = document.createElement('div');
       div.className = 'opsi-jawaban' + (JAWABAN[s.nomorSoal] === o.label ? ' opsi-terpilih' : '');
-      div.innerHTML = '<b>' + o.label + '.</b> ' + esc(o.teks);
+      div.innerHTML = '<b>' + o.label + '.</b> ' + renderTeksDenganFormat(o.teks);
       div.onclick = function () { pilihJawaban(s.nomorSoal, o.label); };
       opsiC.appendChild(div);
     });
@@ -346,6 +346,19 @@ function esc(str) {
   return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
   });
+}
+
+/**
+ * Mengubah teks yang mengandung penanda "[u]...[/u]" (dari alat
+ * konversi soal Word) menjadi HTML dengan tag <u> asli, dengan tetap
+ * meng-escape karakter HTML lain terlebih dulu supaya aman (bukan
+ * celah suntik HTML dari teks soal). HANYA tag <u> ini yang diizinkan
+ * tampil — karakter/tag lain apa pun tetap ditampilkan sebagai teks
+ * biasa, tidak pernah dirender sebagai HTML sungguhan. Dipakai SAMA
+ * PERSIS seperti fungsi sejenis di alat "Konversi Soal Word".
+ */
+function renderTeksDenganFormat(teks) {
+  return esc(teks).split('[u]').join('<u>').split('[/u]').join('</u>');
 }
 
 // ---------- SELESAI UJIAN ----------
