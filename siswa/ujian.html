@@ -139,6 +139,8 @@ let timerInterval = null;
 let waktuSelesaiEpoch = 0;
 let jumlahPelanggaranLokal = 0;
 let batasPelanggaran = 3;
+let waktuPelanggaranTerakhir = 0; // anti pelaporan ganda dari satu aksi siswa
+const JEDA_PELANGGARAN_MS = 5000;
 let fullscreenWajib = true;
 let sedangKeluarSengaja = false; // flag saat klik "Selesai" resmi
 
@@ -451,7 +453,14 @@ function aktifkanAntiCheat() {
 }
 
 async function laporkanPelanggaran(jenis, keterangan) {
-  if (!SESI) return;
+  if (!SESI || sedangKeluarSengaja) return;
+
+  // Satu aksi (mis. keluar fullscreen) memicu fullscreenchange + visibilitychange
+  // + blur hampir bersamaan. Hitung sebagai satu pelanggaran saja.
+  const sekarang = Date.now();
+  if (sekarang - waktuPelanggaranTerakhir < JEDA_PELANGGARAN_MS) return;
+  waktuPelanggaranTerakhir = sekarang;
+
   try {
     const hasil = await callApi('catatPelanggaran', { idSesi: SESI.idSesi, jenis: jenis, keterangan: keterangan });
     jumlahPelanggaranLokal = hasil.jumlahPelanggaran || jumlahPelanggaranLokal + 1;
