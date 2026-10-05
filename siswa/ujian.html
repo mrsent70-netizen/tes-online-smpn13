@@ -334,14 +334,49 @@ function pilihJawaban(nomorSoal, nilai) {
   simpanJawabanKeServer(nomorSoal, nilai);
 }
 
-let debounceTimer = {};
+// ---------- AUTO-SAVE JAWABAN (antrian + coba ulang otomatis) ----------
+let BELUM_TERSIMPAN = {};   // { nomorSoal: nilai } yang belum dikonfirmasi server
+let sedangMengirim = false;
+let timerKirim = null;
+let jedaCobaUlang = 3000;
+
 function simpanJawabanKeServer(nomorSoal, nilai) {
-  clearTimeout(debounceTimer[nomorSoal]);
-  debounceTimer[nomorSoal] = setTimeout(function () {
-    callApi('simpanJawaban', { idSesi: SESI.idSesi, nomorSoal: nomorSoal, jawaban: nilai }).catch(function (err) {
-      console.error('Gagal auto-save:', err.message);
+  BELUM_TERSIMPAN[nomorSoal] = nilai;
+  clearTimeout(timerKirim);
+  timerKirim = setTimeout(kirimAntrianJawaban, 500);
+}
+
+async function kirimAntrianJawaban() {
+  if (sedangMengirim || !SESI || sedangMengakhiri) return;
+  const daftar = Object.keys(BELUM_TERSIMPAN);
+  if (!daftar.length) return;
+
+  sedangMengirim = true;
+  let gagal = false;
+  const paket = {};
+  daftar.forEach(function (n) { paket[n] = BELUM_TERSIMPAN[n]; });
+
+  try {
+    await callApi('simpanJawaban', { idSesi: SESI.idSesi, jawabanBatch: paket });
+    daftar.forEach(function (n) {
+      if (BELUM_TERSIMPAN[n] === paket[n]) delete BELUM_TERSIMPAN[n];
     });
-  }, 500);
+    jedaCobaUlang = 3000;
+  } catch (err) {
+    gagal = true;
+    console.error('Gagal auto-save, akan dicoba ulang:', err.message);
+    jedaCobaUlang = Math.min(jedaCobaUlang * 2, 15000);
+    clearTimeout(timerKirim);
+    timerKirim = setTimeout(kirimAntrianJawaban, jedaCobaUlang);
+  } finally {
+    sedangMengirim = false;
+  }
+
+  // Ada jawaban baru yang masuk selagi pengiriman berlangsung -> kirim lagi
+  if (!gagal && Object.keys(BELUM_TERSIMPAN).length) {
+    clearTimeout(timerKirim);
+    timerKirim = setTimeout(kirimAntrianJawaban, 300);
+  }
 }
 
 function esc(str) {
@@ -372,13 +407,29 @@ function konfirmasiSelesai() {
 }
 function tutupModalSelesai() { document.getElementById('modalSelesai').classList.add('hidden'); }
 
+let sedangMengakhiri = false;
 async function prosesSelesaiUjian(otomatis) {
+  if (sedangMengakhiri) return;
+  sedangMengakhiri = true;
   sedangKeluarSengaja = true;
   clearInterval(timerInterval);
-  try {
-    await callApi('selesaiUjian', { idSesi: SESI.idSesi });
-  } catch (err) {
-    console.error(err.message);
+  clearTimeout(timerKirim);
+
+  // Kirim SEMUA jawaban + akhiri ujian dalam satu permintaan. Dicoba ulang
+  // beberapa kali kalau server sedang sibuk, supaya tidak ada jawaban yang hilang.
+  let terkirim = false;
+  for (let percobaan = 1; percobaan <= 6 && !terkirim; percobaan++) {
+    try {
+      await callApi('selesaiUjian', { idSesi: SESI.idSesi, jawabanAkhir: JAWABAN });
+      terkirim = true;
+    } catch (err) {
+      console.error('selesaiUjian gagal (percobaan ' + percobaan + '):', err.message);
+      if (percobaan < 6) await new Promise(function (r) { setTimeout(r, percobaan * 2000); });
+    }
+  }
+  BELUM_TERSIMPAN = {};
+  if (!terkirim) {
+    alert('PERINGATAN: koneksi bermasalah, jawaban mungkin belum terkirim sepenuhnya. Segera lapor kepada pengawas ujian.');
   }
   document.getElementById('modalSelesai').classList.add('hidden');
   document.getElementById('examView').classList.add('hidden');
