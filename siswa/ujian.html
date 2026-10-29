@@ -12,6 +12,8 @@
   .teks-kanan { text-align: right; }
   .teks-rata { text-align: justify; }
   .teks-indent { display: inline-block; width: 2em; }
+  .teks-gambar { text-align: center; margin: 0.4rem 0 0.8rem 0; }
+  .teks-gambar img { max-width: 100%; height: auto; border-radius: 8px; display: inline-block; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; user-select: none; }
   .navy { background-color: #B45309; }
   .navy-text { color: #B45309; }
@@ -289,11 +291,14 @@ function tampilkanSoal(i) {
 
   document.getElementById('nomorSekarang').textContent = s.nomorTampil;
   document.getElementById('bobotSekarang').textContent = s.bobot;
-  document.getElementById('teksSoal').innerHTML = renderTeksDenganFormat(s.soal);
+  // Jika teks soal memuat penanda [gambar], gambar ditaruh di posisi itu (sesuai
+  // letaknya di dokumen Word); jika tidak, gambar tetap di atas teks seperti biasa.
+  const gambarSebaris = !!s.gambarUrl && String(s.soal || '').indexOf('[gambar]') > -1;
+  document.getElementById('teksSoal').innerHTML = renderTeksDenganFormat(s.soal, gambarSebaris ? s.gambarUrl : '');
 
   const media = document.getElementById('mediaContainer');
   media.innerHTML = '';
-  if (s.gambarUrl) media.innerHTML += '<img src="' + s.gambarUrl + '" class="max-w-full rounded-lg mb-2" />';
+  if (s.gambarUrl && !gambarSebaris) media.innerHTML += '<img src="' + s.gambarUrl + '" class="max-w-full rounded-lg mb-2" />';
   if (s.audioUrl) media.innerHTML += '<audio controls src="' + s.audioUrl + '" class="w-full mb-2"></audio>';
   if (s.videoUrl) media.innerHTML += '<video controls src="' + s.videoUrl + '" class="max-w-full rounded-lg mb-2"></video>';
 
@@ -399,11 +404,15 @@ function esc(str) {
  * biasa, tidak pernah dirender sebagai HTML sungguhan. Dipakai SAMA
  * PERSIS seperti fungsi sejenis di alat "Konversi Soal Word".
  */
-function renderTeksDenganFormat(teks) {
-  let h = esc(teks).replace(/\r\n?/g, '\n');
+function renderTeksDenganFormat(teks, urlGambar) {
+  let h = esc(String(teks == null ? '' : teks).replace(/\u0003/g, '')).replace(/\r\n?/g, '\n');
 
-  // Blok rata tengah / rata kanan (mis. judul bacaan). Baris baru di
-  // sekitar penanda dibuang supaya tidak menimbulkan jarak ganda.
+  // Gambar sebaris: [gambar] -> ditaruh di posisi itu (diganti di langkah terakhir
+  // supaya alamat gambar tidak tersentuh aturan pangkat/indeks di bawah).
+  h = h.replace(/\n?\[gambar\]\n?/g, '\u0003');
+
+  // Blok rata tengah / rata kanan / rata kiri-kanan (mis. judul bacaan dan alinea).
+  // Baris baru di sekitar penanda dibuang supaya tidak menimbulkan jarak ganda.
   h = h.replace(/\n?\[center\]([\s\S]*?)\[\/center\]\n?/g, '<div class="teks-tengah">$1</div>')
        .replace(/\n?\[right\]([\s\S]*?)\[\/right\]\n?/g, '<div class="teks-kanan">$1</div>')
        .replace(/\n?\[justify\]([\s\S]*?)\[\/justify\]\n?/g, '<div class="teks-rata">$1</div>');
@@ -418,9 +427,12 @@ function renderTeksDenganFormat(teks) {
        .replace(/\^(-?[0-9A-Za-z]{1,6})/g, '<sup>$1</sup>')
        .replace(/_\{([^{}]{1,20})\}/g, '<sub>$1</sub>')
        .replace(/([A-Za-z\)])_([0-9]{1,4})/g, '$1<sub>$2</sub>');
+
   // Alinea: [indent] = menjorok baris pertama; baris baru = pindah baris
   h = h.split('[indent]').join('<span class="teks-indent"></span>');
   h = h.replace(/\n\n+/g, '<div style="height:0.6em"></div>').replace(/\n/g, '<br>');
+
+  h = h.split('\u0003').join(urlGambar ? '<div class="teks-gambar"><img src="' + esc(urlGambar) + '" alt="" /></div>' : '');
   return h;
 }
 
