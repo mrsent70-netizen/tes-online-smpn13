@@ -275,7 +275,7 @@ function renderTabel() {
       '<td>' + esc(s.KELAS) + '</td>' +
       '<td>' + esc(s.BAB || '-') + '</td>' +
       '<td><span class="badge bg-blue-100 text-blue-700">' + esc(s.TIPE_SOAL) + '</span></td>' +
-      '<td class="max-w-xs truncate">' + esc(s.SOAL) + '</td>' +
+      '<td class="max-w-xs truncate">' + esc(ringkasSoal(s.SOAL)) + '</td>' +
       '<td>' + esc(s.BOBOT_NILAI) + '</td>' +
       '<td class="whitespace-nowrap">' +
         '<button onclick="editSoal(' + s._row + ')" class="btn btn-secondary" style="padding:4px 10px;">Edit</button> ' +
@@ -283,6 +283,16 @@ function renderTabel() {
       '</td>';
     tbody.appendChild(tr);
   });
+}
+
+// Ringkasan teks soal untuk tabel: buang penanda format ([center], [b], [gambar], dll)
+// dan baris baru, supaya yang tampil teks bersih, bukan kode penanda.
+function ringkasSoal(teks) {
+  return String(teks == null ? '' : teks)
+    .replace(/\[\/?(center|right|justify|indent|b|i|u|sup|sub)\]/g, '')
+    .replace(/\[gambar\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function esc(str) {
