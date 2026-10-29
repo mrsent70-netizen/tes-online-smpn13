@@ -7,6 +7,11 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="../assets/js/config.js"></script>
 <style>
+  sup, sub { line-height: 0; font-size: 0.75em; }
+  .teks-tengah { text-align: center; font-weight: 700; margin: 0 0 0.6rem 0; }
+  .teks-kanan { text-align: right; }
+  .teks-rata { text-align: justify; }
+  .teks-indent { display: inline-block; width: 2em; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; user-select: none; }
   .navy { background-color: #B45309; }
   .navy-text { color: #B45309; }
@@ -80,7 +85,7 @@
     <div class="bg-white rounded-xl shadow-sm p-6">
       <p class="text-xs text-gray-500 mb-2">Soal <span id="nomorSekarang">1</span> dari <span id="totalSoal">-</span> · Bobot <span id="bobotSekarang">-</span></p>
       <div id="mediaContainer" class="mb-4"></div>
-      <p id="teksSoal" class="text-base font-medium mb-5 leading-relaxed"></p>
+      <div id="teksSoal" class="text-base font-medium mb-5 leading-relaxed"></div>
       <div id="opsiContainer" class="space-y-3"></div>
 
       <div class="flex justify-between mt-6">
@@ -395,7 +400,28 @@ function esc(str) {
  * PERSIS seperti fungsi sejenis di alat "Konversi Soal Word".
  */
 function renderTeksDenganFormat(teks) {
-  return esc(teks).split('[u]').join('<u>').split('[/u]').join('</u>');
+  let h = esc(teks).replace(/\r\n?/g, '\n');
+
+  // Blok rata tengah / rata kanan (mis. judul bacaan). Baris baru di
+  // sekitar penanda dibuang supaya tidak menimbulkan jarak ganda.
+  h = h.replace(/\n?\[center\]([\s\S]*?)\[\/center\]\n?/g, '<div class="teks-tengah">$1</div>')
+       .replace(/\n?\[right\]([\s\S]*?)\[\/right\]\n?/g, '<div class="teks-kanan">$1</div>')
+       .replace(/\n?\[justify\]([\s\S]*?)\[\/justify\]\n?/g, '<div class="teks-rata">$1</div>');
+
+  // Penanda sederhana: [u] [b] [i] [sup] [sub] ... [/..]
+  ['u', 'b', 'i', 'sup', 'sub'].forEach(function (t) {
+    h = h.split('[' + t + ']').join('<' + t + '>').split('[/' + t + ']').join('</' + t + '>');
+  });
+
+  // Singkatan pangkat/indeks: 2^3 atau 2^{10} -> pangkat ; H_2O atau H_{12} -> indeks (angka saja)
+  h = h.replace(/\^\{([^{}]{1,20})\}/g, '<sup>$1</sup>')
+       .replace(/\^(-?[0-9A-Za-z]{1,6})/g, '<sup>$1</sup>')
+       .replace(/_\{([^{}]{1,20})\}/g, '<sub>$1</sub>')
+       .replace(/([A-Za-z\)])_([0-9]{1,4})/g, '$1<sub>$2</sub>');
+  // Alinea: [indent] = menjorok baris pertama; baris baru = pindah baris
+  h = h.split('[indent]').join('<span class="teks-indent"></span>');
+  h = h.replace(/\n\n+/g, '<div style="height:0.6em"></div>').replace(/\n/g, '<br>');
+  return h;
 }
 
 // ---------- SELESAI UJIAN ----------
