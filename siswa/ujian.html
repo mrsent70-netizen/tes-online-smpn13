@@ -48,7 +48,14 @@
       <label class="text-xs font-semibold text-gray-600">NISN / Username</label>
       <input id="loginUsername" class="mb-3" placeholder="NISN" />
       <label class="text-xs font-semibold text-gray-600">Password</label>
-      <input id="loginPassword" type="password" class="mb-4" placeholder="Password" />
+      <div class="relative mb-4">
+        <input id="loginPassword" type="password" style="padding-right:2.75rem" placeholder="Password" autocomplete="current-password" />
+        <button type="button" id="tombolMata" onclick="toggleLihatPassword()" aria-label="Tampilkan password" aria-pressed="false" title="Tampilkan / sembunyikan password"
+          style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);background:none;border:0;padding:.35rem;cursor:pointer;color:#6b7280;line-height:0">
+          <svg id="ikonMataTutup" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg id="ikonMataBuka" class="hidden" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
       <button onclick="doLogin()" class="btn btn-primary w-full">Masuk</button>
     </div>
 
@@ -96,6 +103,9 @@
       </div>
     </div>
   </main>
+
+  <!-- Penanda status simpan jawaban (pojok kiri bawah) -->
+  <div id="statusSimpan" class="hidden fixed bottom-3 left-3 z-30 text-xs font-semibold px-3 py-1.5 rounded-full shadow" style="max-width:min(92vw,420px);" role="status" aria-live="polite"></div>
 </div>
 
 <!-- ============ MODAL PERINGATAN FULLSCREEN ============ -->
@@ -133,6 +143,18 @@
     </div>
     <p id="hasilBelumTampil" class="text-xs text-gray-400 hidden">Nilai akan diumumkan kemudian oleh guru/admin.</p>
     <p class="text-xs text-gray-400 mt-2">Anda boleh menutup halaman ini.</p>
+  </div>
+</div>
+
+<!-- ============ LAYAR PENGIRIMAN JAWABAN AKHIR ============ -->
+<div id="kirimView" class="hidden min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md text-center">
+    <p id="kirimIkon" class="text-5xl mb-3">⏳</p>
+    <h1 id="kirimJudul" class="text-lg font-bold navy-text mb-2">Mengirim jawaban Anda…</h1>
+    <p id="kirimKeterangan" class="text-sm text-gray-600 mb-4">Mohon tunggu dan jangan menutup halaman ini.</p>
+    <p id="kirimRingkas" class="text-xs text-gray-500 mb-4"></p>
+    <button id="kirimTombol" onclick="kirimUlangAkhir()" class="btn btn-primary w-full hidden">Kirim ulang</button>
+    <p id="kirimCatatan" class="text-xs text-gray-400 mt-3"></p>
   </div>
 </div>
 
@@ -188,6 +210,16 @@ async function callApi(action, payload) {
 }
 
 // ---------- LOGIN SISWA ----------
+function toggleLihatPassword() {
+  const inp = document.getElementById('loginPassword');
+  const tampil = inp.type === 'password';
+  inp.type = tampil ? 'text' : 'password';
+  document.getElementById('ikonMataTutup').classList.toggle('hidden', tampil);
+  document.getElementById('ikonMataBuka').classList.toggle('hidden', !tampil);
+  const b = document.getElementById('tombolMata');
+  b.setAttribute('aria-pressed', tampil ? 'true' : 'false');
+  b.setAttribute('aria-label', tampil ? 'Sembunyikan password' : 'Tampilkan password');
+}
 async function doLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
@@ -219,6 +251,9 @@ async function mulaiUjianForm() {
     if (SESI.jawabanTersimpan) {
       SESI.jawabanTersimpan.forEach(function (j) { JAWABAN[j.nomorSoal] = j.jawaban; });
     }
+    // Jawaban yang sempat belum terkirim sebelum halaman ditutup/dimuat ulang
+    // dipulihkan dan dikirim lagi (disimpan sementara di browser perangkat ini).
+    pulihkanAntrianLokal();
 
     document.getElementById('loginView').classList.add('hidden');
     document.getElementById('examView').classList.remove('hidden');
@@ -349,9 +384,68 @@ let BELUM_TERSIMPAN = {};   // { nomorSoal: nilai } yang belum dikonfirmasi serv
 let sedangMengirim = false;
 let timerKirim = null;
 let jedaCobaUlang = 3000;
+let akhirTerkirim = false;  // true setelah server menerima pengiriman akhir
+
+// Pengaturan percobaan ulang (bisa disesuaikan di sini).
+const KONFIG_KIRIM = {
+  maksPercobaanAkhir: 10,     // percobaan otomatis saat menekan Selesai
+  jedaDasarMs: 2000,          // jeda dasar antar percobaan (dikali nomor percobaan)
+  jedaMaksMs: 15000,          // jeda terpanjang antar percobaan
+  jitterMs: 3000,             // tambahan acak supaya siswa tidak mencoba ulang serentak
+  jedaOtomatisAkhirMs: 20000  // jeda sebelum mencoba lagi sendiri setelah semua percobaan gagal
+};
+
+function tunggu(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function jedaAcak(percobaan) {
+  return Math.min(KONFIG_KIRIM.jedaDasarMs * percobaan, KONFIG_KIRIM.jedaMaksMs) + Math.random() * KONFIG_KIRIM.jitterMs;
+}
+
+// ----- Penyimpanan sementara di browser (cadangan kalau halaman dimuat ulang) -----
+function simpanAntrianLokal() {
+  try {
+    if (!SESI) return;
+    if (Object.keys(BELUM_TERSIMPAN).length) localStorage.setItem('antrian_' + SESI.idSesi, JSON.stringify(BELUM_TERSIMPAN));
+    else localStorage.removeItem('antrian_' + SESI.idSesi);
+  } catch (e) { /* abaikan: penyimpanan browser tidak tersedia */ }
+}
+function hapusAntrianLokal() {
+  try { if (SESI) localStorage.removeItem('antrian_' + SESI.idSesi); } catch (e) {}
+}
+function pulihkanAntrianLokal() {
+  try {
+    const mentah = localStorage.getItem('antrian_' + SESI.idSesi);
+    if (!mentah) return;
+    const data = JSON.parse(mentah);
+    Object.keys(data).forEach(function (n) { JAWABAN[n] = data[n]; BELUM_TERSIMPAN[n] = data[n]; });
+    if (Object.keys(BELUM_TERSIMPAN).length) setTimeout(kirimAntrianJawaban, 1000);
+  } catch (e) { /* abaikan */ }
+}
+
+// ----- Penanda status simpan (pojok kiri bawah layar ujian) -----
+let tokenStatus = 0;
+function setStatusSimpan(jenis, jumlah) {
+  const el = document.getElementById('statusSimpan');
+  if (!el) return;
+  const saya = ++tokenStatus;
+  const gaya = {
+    menyimpan: ['Menyimpan jawaban…', '#E5EDF5', '#1E3A5F'],
+    tersimpan: ['✓ Jawaban tersimpan', '#DCFCE7', '#166534'],
+    gagal: ['⚠ ' + (jumlah || 0) + ' jawaban belum tersimpan. Mencoba lagi… Periksa internet Anda.', '#FEF3C7', '#92400E'],
+    offline: ['⚠ Tidak ada koneksi internet. Jangan menutup halaman ini; jawaban dikirim saat tersambung lagi.', '#FEE2E2', '#B91C1C']
+  }[jenis];
+  if (!gaya) { el.classList.add('hidden'); return; }
+  el.textContent = gaya[0];
+  el.style.background = gaya[1];
+  el.style.color = gaya[2];
+  el.classList.remove('hidden');
+  if (jenis === 'tersimpan') {
+    setTimeout(function () { if (tokenStatus === saya) el.classList.add('hidden'); }, 1800);
+  }
+}
 
 function simpanJawabanKeServer(nomorSoal, nilai) {
   BELUM_TERSIMPAN[nomorSoal] = nilai;
+  simpanAntrianLokal();
   clearTimeout(timerKirim);
   timerKirim = setTimeout(kirimAntrianJawaban, 500);
 }
@@ -366,19 +460,26 @@ async function kirimAntrianJawaban() {
   const paket = {};
   daftar.forEach(function (n) { paket[n] = BELUM_TERSIMPAN[n]; });
 
+  // Tampilkan "Menyimpan…" hanya kalau agak lama, supaya layar tidak berkedip tiap klik.
+  const penundaStatus = setTimeout(function () { setStatusSimpan('menyimpan'); }, 1200);
+
   try {
     await callApi('simpanJawaban', { idSesi: SESI.idSesi, jawabanBatch: paket });
     daftar.forEach(function (n) {
       if (BELUM_TERSIMPAN[n] === paket[n]) delete BELUM_TERSIMPAN[n];
     });
+    simpanAntrianLokal();
     jedaCobaUlang = 3000;
+    if (!Object.keys(BELUM_TERSIMPAN).length) setStatusSimpan('tersimpan');
   } catch (err) {
     gagal = true;
     console.error('Gagal auto-save, akan dicoba ulang:', err.message);
+    setStatusSimpan(navigator.onLine === false ? 'offline' : 'gagal', Object.keys(BELUM_TERSIMPAN).length);
     jedaCobaUlang = Math.min(jedaCobaUlang * 2, 15000);
     clearTimeout(timerKirim);
-    timerKirim = setTimeout(kirimAntrianJawaban, jedaCobaUlang);
+    timerKirim = setTimeout(kirimAntrianJawaban, jedaCobaUlang + Math.random() * 2000);
   } finally {
+    clearTimeout(penundaStatus);
     sedangMengirim = false;
   }
 
@@ -388,6 +489,25 @@ async function kirimAntrianJawaban() {
     timerKirim = setTimeout(kirimAntrianJawaban, 300);
   }
 }
+
+// Koneksi internet kembali -> langsung kirim yang tertunda.
+window.addEventListener('online', function () {
+  if (!SESI) return;
+  if (sedangMengakhiri && !akhirTerkirim) jalankanPengirimanAkhir(3);
+  else kirimAntrianJawaban();
+});
+window.addEventListener('offline', function () {
+  if (SESI && !sedangMengakhiri) setStatusSimpan('offline');
+});
+
+// Cegah halaman tertutup tanpa sengaja selagi ada jawaban yang belum terkirim.
+window.addEventListener('beforeunload', function (e) {
+  if (SESI && !akhirTerkirim && (sedangMengakhiri || Object.keys(BELUM_TERSIMPAN).length)) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
 
 function esc(str) {
   return String(str == null ? '' : str).replace(/[&<>"]/g, function (c) {
@@ -446,31 +566,107 @@ function konfirmasiSelesai() {
 function tutupModalSelesai() { document.getElementById('modalSelesai').classList.add('hidden'); }
 
 let sedangMengakhiri = false;
+let sedangKirimAkhir = false;
+let pernahGagalAkhir = false;
+let timerOtomatisAkhir = null;
+
 async function prosesSelesaiUjian(otomatis) {
   if (sedangMengakhiri) return;
   sedangMengakhiri = true;
   sedangKeluarSengaja = true;
   clearInterval(timerInterval);
   clearTimeout(timerKirim);
+  setStatusSimpan(null);
+  await jalankanPengirimanAkhir(KONFIG_KIRIM.maksPercobaanAkhir);
+}
 
-  // Kirim SEMUA jawaban + akhiri ujian dalam satu permintaan. Dicoba ulang
-  // beberapa kali kalau server sedang sibuk, supaya tidak ada jawaban yang hilang.
-  let terkirim = false;
-  for (let percobaan = 1; percobaan <= 6 && !terkirim; percobaan++) {
+// Mengirim SEMUA jawaban + mengakhiri ujian dalam satu permintaan, dengan percobaan ulang.
+// Layar "berhasil" HANYA ditampilkan kalau server benar-benar menerimanya.
+async function jalankanPengirimanAkhir(maksPercobaan) {
+  if (sedangKirimAkhir || akhirTerkirim) return;
+  sedangKirimAkhir = true;
+  clearTimeout(timerOtomatisAkhir);
+  setLayarKirim(pernahGagalAkhir ? 'ulang' : 'mengirim');
+
+  const berhasil = await kirimJawabanAkhir(maksPercobaan);
+  sedangKirimAkhir = false;
+
+  if (berhasil) {
+    akhirTerkirim = true;
+    BELUM_TERSIMPAN = {};
+    hapusAntrianLokal();
+    tampilkanLayarSelesai();
+  } else {
+    pernahGagalAkhir = true;
+    setLayarKirim('gagal');
+    // Coba lagi sendiri tanpa menunggu siswa menekan tombol.
+    timerOtomatisAkhir = setTimeout(function () { jalankanPengirimanAkhir(3); },
+      KONFIG_KIRIM.jedaOtomatisAkhirMs + Math.random() * 5000);
+  }
+}
+
+async function kirimJawabanAkhir(maksPercobaan) {
+  let sebabTerakhir = '';
+  for (let p = 1; p <= maksPercobaan; p++) {
     try {
       await callApi('selesaiUjian', { idSesi: SESI.idSesi, jawabanAkhir: JAWABAN });
-      terkirim = true;
+      return true;
     } catch (err) {
-      console.error('selesaiUjian gagal (percobaan ' + percobaan + '):', err.message);
-      if (percobaan < 6) await new Promise(function (r) { setTimeout(r, percobaan * 2000); });
+      sebabTerakhir = err.message || '';
+      console.error('selesaiUjian gagal (percobaan ' + p + '):', sebabTerakhir);
+      document.getElementById('kirimCatatan').textContent =
+        'Percobaan ' + p + ' dari ' + maksPercobaan + ' belum berhasil' + (sebabTerakhir ? ' (' + sebabTerakhir + ')' : '') + '…';
+      if (p < maksPercobaan) await tunggu(jedaAcak(p));
     }
   }
-  BELUM_TERSIMPAN = {};
-  if (!terkirim) {
-    alert('PERINGATAN: koneksi bermasalah, jawaban mungkin belum terkirim sepenuhnya. Segera lapor kepada pengawas ujian.');
-  }
+  return false;
+}
+
+function kirimUlangAkhir() { jalankanPengirimanAkhir(3); }
+
+function setLayarKirim(mode) {
   document.getElementById('modalSelesai').classList.add('hidden');
   document.getElementById('examView').classList.add('hidden');
+  document.getElementById('kirimView').classList.remove('hidden');
+
+  const ikon = document.getElementById('kirimIkon');
+  const judul = document.getElementById('kirimJudul');
+  const ket = document.getElementById('kirimKeterangan');
+  const tombol = document.getElementById('kirimTombol');
+  const catatan = document.getElementById('kirimCatatan');
+  document.getElementById('kirimRingkas').textContent =
+    'Jawaban pada halaman ini: ' + Object.keys(JAWABAN).length + ' dari ' + SOAL.length + ' soal.';
+
+  if (mode === 'gagal') {
+    ikon.textContent = '⚠️';
+    judul.textContent = 'Jawaban BELUM terkirim';
+    judul.style.color = '#B91C1C';
+    ket.textContent = 'JANGAN menutup halaman ini. Pastikan internet tersambung, lalu tekan "Kirim ulang". Sistem juga mencoba lagi sendiri. Jika tetap gagal, panggil pengawas ujian.';
+    tombol.textContent = 'Kirim ulang';
+    tombol.disabled = false;
+    tombol.classList.remove('hidden');
+  } else if (mode === 'ulang') {
+    ikon.textContent = '⏳';
+    judul.textContent = 'Mencoba mengirim lagi…';
+    judul.style.color = '#B91C1C';
+    ket.textContent = 'Jawaban belum terkirim. Jangan menutup halaman ini.';
+    tombol.textContent = 'Mengirim…';
+    tombol.disabled = true;
+    tombol.classList.remove('hidden');
+  } else {
+    ikon.textContent = '⏳';
+    judul.textContent = 'Mengirim jawaban Anda…';
+    judul.style.color = '';
+    ket.textContent = 'Mohon tunggu dan jangan menutup halaman ini.';
+    tombol.classList.add('hidden');
+    catatan.textContent = '';
+  }
+}
+
+function tampilkanLayarSelesai() {
+  document.getElementById('modalSelesai').classList.add('hidden');
+  document.getElementById('examView').classList.add('hidden');
+  document.getElementById('kirimView').classList.add('hidden');
   document.getElementById('doneView').classList.remove('hidden');
   if (document.fullscreenElement) document.exitFullscreen().catch(function(){});
 
